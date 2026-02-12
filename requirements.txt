@@ -4,3 +4,7 @@ uvicorn
 pydantic-settings
 python-dotenv
 pytest
+pytesseract
+opencv-python
+docxtpl
+pillow
