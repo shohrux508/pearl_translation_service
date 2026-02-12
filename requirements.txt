@@ -1,0 +1,6 @@
+aiogram>=3.0
+fastapi
+uvicorn
+pydantic-settings
+python-dotenv
+pytest
