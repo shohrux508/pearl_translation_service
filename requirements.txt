@@ -1,0 +1,12 @@
+aiogram>=3.0
+fastapi
+uvicorn
+pydantic-settings
+python-dotenv
+pytest
+pytesseract
+opencv-python
+docxtpl
+pillow
+google-generativeai
+python-docx
