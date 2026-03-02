@@ -8,3 +8,5 @@ pytesseract
 opencv-python
 docxtpl
 pillow
+google-generativeai
+python-docx

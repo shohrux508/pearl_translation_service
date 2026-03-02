@@ -3,6 +3,7 @@ import logging
 from app.config import settings
 from app.container import Container
 from app.services.example_service import ExampleService
+from app.services.gemini_service import GeminiTranslationService
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +14,12 @@ class App:
     def setup_services(self):
         logger.info("Setting up services...")
         self.container.register("example_service", ExampleService())
+        
+        # Регистрируем наш сервис (если токена нет, кинет ValueError при первом использовании или сейчас)
+        if settings.GEMINI_API_KEY:
+            self.container.register("gemini_service", GeminiTranslationService(api_key=settings.GEMINI_API_KEY))
+        else:
+            logger.warning("GEMINI_API_KEY не установлен, gemini_service не зарегистрирован.")
         
 
     async def setup_telegram(self):

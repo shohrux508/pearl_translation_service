@@ -1,7 +1,7 @@
 from aiogram import Bot, Dispatcher
 from app.config import settings
 from app.container import Container
-from app.telegram.routers import example
+from app.telegram.routers import example, translator, admin_docs
 
 async def start_telegram(container: Container):
     bot = Bot(token=settings.BOT_TOKEN)
@@ -9,9 +9,12 @@ async def start_telegram(container: Container):
 
     # Inject dependency into routers
     example.setup_router(container)
+    translator.setup_router(container)
 
     # Include routers
     dp.include_router(example.router)
+    dp.include_router(translator.router)
+    dp.include_router(admin_docs.router)
 
     try:
         await dp.start_polling(bot)
