@@ -78,6 +78,49 @@ class GeminiTranslationService:
             logger.error(f"Непредвиденная ошибка при обращении к Gemini: {e}")
             raise e
 
+    async def generate_field_translations(self, ru_fields: list[str]) -> list[dict]:
+        """
+        Берет список полей на русском и генерирует для них ключи и перевод на английский.
+        Возвращает: [{"keyword": "...", "ru_name": "...", "en_name": "..."}, ...]
+        """
+        prompt = (
+            "У меня есть список полей документа на русском языке. "
+            "Для каждого поля сгенерируй:\n"
+            "1. Уникальный 'keyword' (ключ) на английском в формате snake_case.\n"
+            "2. 'en_name' (перевод на английский язык).\n"
+            "Верни в формате JSON, где корнем является массив (строго list, не объект) объектов со строгими ключами: "
+            "'keyword', 'ru_name', 'en_name'. Верни ТОЛЬКО JSON-массив и больше ничего.\n\n"
+            f"Список полей: {ru_fields}"
+        )
+        
+        try:
+            logger.info(f"Отправка {len(ru_fields)} полей в Gemini для перевода и генерации ключей...")
+            
+            response = await self.model.generate_content_async(
+                contents=prompt,
+                generation_config={"response_mime_type": "application/json"}
+            )
+            
+            data = json.loads(response.text)
+            
+            # В случае если Gemini вернет объект {'fields': [...]}, обрабатываем:
+            if isinstance(data, dict):
+                # берем первую попавшуюся коллекцию если это dict
+                for k, v in data.items():
+                    if isinstance(v, list):
+                        data = v
+                        break
+                
+            logger.info("Успешно сгенерированы ключи и переводы (JSON).")
+            return data
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Ошибка при парсинге JSON от Gemini (fields): {e}")
+            raise ValueError("Invalid JSON response from Gemini")
+        except Exception as e:
+            logger.error(f"Непредвиденная ошибка при обращении к Gemini (fields): {e}")
+            raise e
+
     def insert_into_docx(
         self, 
         data: Dict[str, Any], 

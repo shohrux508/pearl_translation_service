@@ -15,6 +15,14 @@
         "test_document": {
             "name": "Тестовый документ",
             "emoji": "✅"
+        },
+        "test_document2": {
+            "name": "Тестовый документ 2",
+            "emoji": "🗡"
+        },
+        "id_card_back_side": {
+            "name": "ID Карта (задняя часть)",
+            "emoji": "🫥"
         }
     },
     "configs": {
@@ -29,6 +37,12 @@
         },
         "test_document": {
             "prompt_fields": "first_name"
+        },
+        "test_document2": {
+            "prompt_fields": "full_name, place_of_birth, date_of_birth, year_of_issue, expiry_date, passport_series, date_of_registration"
+        },
+        "id_card_back_side": {
+            "prompt_fields": "personal_identification_number, place_of_issue"
         }
     },
     "field_names": {
@@ -55,7 +69,15 @@
             "state_code": "Код государства",
             "passport_number": "Номер паспорта",
             "authority": "Орган выдачи",
-            "first_name": "Имя"
+            "first_name": "Имя",
+            "full_name": "ФИО",
+            "place_of_birth": "Место рождения",
+            "year_of_issue": "Год выдачи",
+            "expiry_date": "Срок окончания",
+            "passport_series": "Серия паспорта",
+            "date_of_registration": "Дата регистрации",
+            "personal_identification_number": "ПИНФЛ",
+            "place_of_issue": "МЕСТО ВЫДАЧИ"
         },
         "en": {
             "given_name": "Given Name",
@@ -80,7 +102,15 @@
             "state_code": "State Code",
             "passport_number": "Passport Number",
             "authority": "Authority",
-            "first_name": "Fist name"
+            "first_name": "Fist name",
+            "full_name": "Full Name",
+            "place_of_birth": "Place of Birth",
+            "year_of_issue": "Year of Issue",
+            "expiry_date": "Expiry Date",
+            "passport_series": "Passport Series",
+            "date_of_registration": "Date of Registration",
+            "personal_identification_number": "Personal Identification Number",
+            "place_of_issue": "Place of Issue"
         }
     }
 }

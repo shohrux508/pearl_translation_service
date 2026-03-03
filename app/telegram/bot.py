@@ -10,6 +10,7 @@ async def start_telegram(container: Container):
     # Inject dependency into routers
     example.setup_router(container)
     translator.setup_router(container)
+    admin_docs.setup_router(container)
 
     # Include routers
     dp.include_router(example.router)

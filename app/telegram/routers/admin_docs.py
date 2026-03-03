@@ -17,8 +17,14 @@ class AddDocState(StatesGroup):
     waiting_for_ru_template = State()
     waiting_for_en_template = State()
 
+gemini_service = None
+
 def setup_router(container: Container):
-    pass
+    global gemini_service
+    try:
+        gemini_service = container.get("gemini_service")
+    except ValueError:
+        pass
 
 @router.message(Command("add_doc"))
 async def cmd_add_doc(message: types.Message, state: FSMContext):
@@ -64,44 +70,47 @@ async def process_doc_emoji(message: types.Message, state: FSMContext):
     
     await message.reply(
         f"✅ Эмодзи {emoji} принят.\n\n"
-        "Шаг 4. Укажите поля для извлечения. Каждое поле с новой строки в формате:\n"
-        "`ключ=Название на русском=Name in English`\n\n"
+        "Шаг 4. Укажите поля для извлечения **на русском языке**.\n"
+        "Каждое поле с новой строки. Я сам сгенерирую для них ключи и перевод на английский.\n\n"
         "Пример:\n"
-        "`husband_name=ФИО Мужа=Husband Name`\n"
-        "`wife_name=ФИО Жены=Wife Name`\n"
-        "`reg_date=Дата регистрации=Date of Registration`",
+        "`ФИО Мужа`\n"
+        "`ФИО Жены`\n"
+        "`Дата регистрации`",
         parse_mode="Markdown"
     )
     await state.set_state(AddDocState.waiting_for_fields)
 
 @router.message(AddDocState.waiting_for_fields)
 async def process_doc_fields(message: types.Message, state: FSMContext):
+    if not gemini_service:
+        await message.reply("❌ Ошибка: Сервис Gemini не настроен. Обратитесь к администратору или проверьте API_KEY.")
+        return
+
     lines = message.text.strip().split("\n")
-    
-    prompt_fields_list = []
-    ru_translations = {}
-    en_translations = {}
-    
+    ru_fields = [line.strip() for line in lines if line.strip()]
+
+    if not ru_fields:
+        await message.reply("Вы не ввели ни одного поля. Пожалуйста, попробуйте еще раз.")
+        return
+
+    msg = await message.reply("⏳ Генерирую ключи и переводы с помощью ИИ. Пожалуйста, подождите...")
+
     try:
-        for line in lines:
-            line = line.strip()
-            if not line: continue
-            
-            parts = [p.strip() for p in line.split("=")]
-            if len(parts) == 3:
-                key, ru_name, en_name = parts
-            elif len(parts) == 2:
-                key, ru_name = parts
-                en_name = ru_name
+        generated_fields = await gemini_service.generate_field_translations(ru_fields)
+        
+        prompt_fields_list = []
+        ru_translations = {}
+        en_translations = {}
+        
+        for item in generated_fields:
+            if isinstance(item, dict) and "keyword" in item and "ru_name" in item and "en_name" in item:
+                key = item["keyword"]
+                prompt_fields_list.append(key)
+                ru_translations[key] = item["ru_name"]
+                en_translations[key] = item["en_name"]
             else:
-                key = parts[0]
-                ru_name = key
-                en_name = key
-                
-            prompt_fields_list.append(key)
-            ru_translations[key] = ru_name
-            en_translations[key] = en_name
-            
+                raise ValueError("Неверный формат ответа от Gemini: отсутствуют нужные ключи.")
+
         prompt_fields_str = ", ".join(prompt_fields_list)
         
         await state.update_data(
@@ -110,16 +119,22 @@ async def process_doc_fields(message: types.Message, state: FSMContext):
             en_translations=en_translations
         )
         
-        await message.reply(
-            f"✅ Поля успешно обработаны ({len(prompt_fields_list)} шт).\n\n"
-            "Шаг 5. Отправьте готовый шаблон перевода для **РУССКОГО** языка (файл `.docx`).\n"
-            "(Или отправьте слово `skip` чтобы пропустить и создать пустой шаблон).",
-            parse_mode="Markdown"
+        result_text = f"✅ Поля успешно обработаны ({len(prompt_fields_list)} шт):\n\n"
+        for key in prompt_fields_list:
+            result_text += f"• `{key}`: {ru_translations[key]} ➡️ {en_translations[key]}\n"
+            
+        result_text += (
+            "\nШаг 5. Отправьте готовый шаблон перевода для **РУССКОГО** языка (файл `.docx`).\n"
+            "(Или отправьте слово `skip` чтобы пропустить и создать пустой шаблон)."
         )
+        
+        await msg.delete()
+        await message.reply(result_text, parse_mode="Markdown")
         await state.set_state(AddDocState.waiting_for_ru_template)
         
     except Exception as e:
-        await message.reply(f"❌ Ошибка разбора полей. Убедитесь, что формат правильный.\nОшибка: {e}")
+        await msg.delete()
+        await message.reply(f"❌ Ошибка генерации полей через ИИ.\nПопробуйте написать еще раз.\nОшибка: {e}")
 
 @router.message(AddDocState.waiting_for_ru_template, F.document | F.text)
 async def process_ru_template(message: types.Message, state: FSMContext):
