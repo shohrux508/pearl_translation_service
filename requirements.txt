@@ -6,3 +6,4 @@ python-dotenv
 pytest
 docxtpl
 google-generativeai
+pillow
