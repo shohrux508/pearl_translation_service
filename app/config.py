@@ -11,10 +11,10 @@ class Settings(BaseSettings):
     BOT_TOKEN: str
     GEMINI_API_KEY: str = "" # Ключ не сделан обязательным, чтобы не ломать старый код
     API_HOST: str = "0.0.0.0"
-    API_PORT: int = 8000
+    PORT: int = 8000
     RUN_TELEGRAM: bool = True
     RUN_API: bool = True
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()

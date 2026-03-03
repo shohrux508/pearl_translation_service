@@ -4,45 +4,17 @@
             "name": "ID карта",
             "emoji": "🪪"
         },
-        "birth_cert": {
-            "name": "Свидетельство о рождении",
-            "emoji": "👶"
-        },
         "passport": {
             "name": "Загранпаспорт",
             "emoji": "🛂"
-        },
-        "test_document": {
-            "name": "Тестовый документ",
-            "emoji": "✅"
-        },
-        "test_document2": {
-            "name": "Тестовый документ 2",
-            "emoji": "🗡"
-        },
-        "id_card_back_side": {
-            "name": "ID Карта (задняя часть)",
-            "emoji": "🫥"
         }
     },
     "configs": {
         "id_card": {
-            "prompt_fields": "given_name, surname, patronymic\ncitizenship, date_of_birth\ncard_number, date_of_issue, date_of_expiry"
-        },
-        "birth_cert": {
-            "prompt_fields": "child_surname, child_given_name, child_patronymic\ndate_of_birth, birth_place\nmother_fullname, mother_nationality\nfather_fullname, father_nationality\nissue_place, date_of_issue, record_number"
+            "prompt_fields": "given_name, surname, patronymic\ncitizenship, date_of_birth\ncard_number, date_of_issue, date_of_expiry, personal_identification_number, place_of_issue"
         },
         "passport": {
             "prompt_fields": "type, state_code, passport_number\nsurname, given_name\ncitizenship, date_of_birth, birth_place\ndate_of_issue, authority, date_of_expiry"
-        },
-        "test_document": {
-            "prompt_fields": "first_name"
-        },
-        "test_document2": {
-            "prompt_fields": "full_name, place_of_birth, date_of_birth, year_of_issue, expiry_date, passport_series, date_of_registration"
-        },
-        "id_card_back_side": {
-            "prompt_fields": "personal_identification_number, place_of_issue"
         }
     },
     "field_names": {
@@ -77,7 +49,12 @@
             "passport_series": "Серия паспорта",
             "date_of_registration": "Дата регистрации",
             "personal_identification_number": "ПИНФЛ",
-            "place_of_issue": "МЕСТО ВЫДАЧИ"
+            "place_of_issue": "МЕСТО ВЫДАЧИ",
+            "husband_full_name": "ФИО Мужа",
+            "wife_full_name": "ФИО Жены",
+            "registration_date": "Дата регистрации",
+            "husbands_full_name": "ФИО Мужа",
+            "wifes_full_name": "ФИО Жены"
         },
         "en": {
             "given_name": "Given Name",
@@ -110,7 +87,12 @@
             "passport_series": "Passport Series",
             "date_of_registration": "Date of Registration",
             "personal_identification_number": "Personal Identification Number",
-            "place_of_issue": "Place of Issue"
+            "place_of_issue": "Place of Issue",
+            "husband_full_name": "Husband's Full Name",
+            "wife_full_name": "Wife's Full Name",
+            "registration_date": "Registration Date",
+            "husbands_full_name": "Husband's Full Name",
+            "wifes_full_name": "Wife's Full Name"
         }
     }
 }

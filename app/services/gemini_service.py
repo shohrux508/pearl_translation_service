@@ -28,20 +28,20 @@ class GeminiTranslationService:
         
         # Дефолтный промпт, чтобы не прокидывать его каждый раз
         self.default_prompt = (
-            "Проанализируй этот документ. Извлеки все значимые текстовые поля "
+            "Проанализируй предоставленные изображения (это могут быть лицевая и обратная стороны одного документа). "
+            "Извлеки все значимые текстовые поля, используя информацию со всех переданных изображений, "
             "и верни их в виде плоского JSON словаря (ключ-значение, где оба строки). "
             "Ключи должны быть на английском (snake_case), соответствуя смыслу поля."
         )
 
     async def extract_data_from_image(
         self, 
-        image_path: Union[str, Path] = None, 
+        image_path: Union[str, Path, list[Union[str, Path]]] = None, 
         prompt: str = None,
         test_json_response: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
-        Отправляет изображение в Gemini и извлекает данные в JSON.
-        Если передан test_json_response, возвращает его сразу (для мока/тестов).
+        Отправляет одно или несколько изображений в Gemini и извлекает данные в JSON.
         """
         if test_json_response is not None:
             logger.info("Использован тестовый JSON ответ, вызов к API пропущен.")
@@ -54,14 +54,19 @@ class GeminiTranslationService:
         current_prompt = prompt or self.default_prompt
             
         try:
-            # Загружаем изображение
-            img = PIL.Image.open(image_path)
+            contents = [current_prompt]
             
-            logger.info(f"Отправка изображения {image_path} в Gemini для анализа...")
+            if isinstance(image_path, list):
+                logger.info(f"Отправка {len(image_path)} изображений в Gemini для анализа...")
+                for p in image_path:
+                    contents.append(PIL.Image.open(p))
+            else:
+                logger.info(f"Отправка изображения {image_path} в Gemini для анализа...")
+                contents.append(PIL.Image.open(image_path))
             
             # Мы ожидаем, что Gemini вернет строго JSON
             response = await self.model.generate_content_async(
-                [current_prompt, img],
+                contents,
                 generation_config={"response_mime_type": "application/json"}
             )
             

@@ -57,5 +57,32 @@ class DocumentManager:
         
         self.save()
 
+    def delete_document_type(self, doc_id: str):
+        if doc_id in self.data.get("document_types", {}):
+            del self.data["document_types"][doc_id]
+        if doc_id in self.data.get("configs", {}):
+            del self.data["configs"][doc_id]
+        self.save()
+        
+        # Удаляем шаблоны
+        import os
+        templates_dir = Path("templates")
+        ru_template = templates_dir / f"{doc_id.upper()}_TEMPLATE_RU.docx"
+        en_template = templates_dir / f"{doc_id.upper()}_TEMPLATE_EN.docx"
+        
+        if ru_template.exists():
+            os.remove(ru_template)
+        if en_template.exists():
+            os.remove(en_template)
+
+    def update_document_info(self, doc_id: str, name: str = None, emoji: str = None):
+        doc = self.data.get("document_types", {}).get(doc_id)
+        if doc:
+            if name is not None:
+                doc["name"] = name
+            if emoji is not None:
+                doc["emoji"] = emoji
+            self.save()
+
 # Global singleton
 doc_manager = DocumentManager()

@@ -11,6 +11,7 @@ router = Router()
 container_instance: Container = None
 
 class TranslationState(StatesGroup):
+    waiting_for_back_photo = State()
     choosing_doc_type = State()
     choosing_language = State()
     validating_data = State()
@@ -28,20 +29,48 @@ def setup_router(container: Container):
 @router.message(F.photo)
 async def handle_document_photo(message: types.Message, state: FSMContext):
     """
-    Принимает фотографию документа от пользователя и предлагает выбрать тип.
+    Принимает первую или вторую фотографию документа.
     """
-    # 1. Проверяем, что сервис зарегистрирован
+    # Проверка сервиса
     try:
         container_instance.get("gemini_service")
     except KeyError:
         await message.reply("❌ Сервис перевода (Gemini) в данный момент недоступен. Проверьте API ключ.")
         return
 
-    # 2. Сохраняем file_id фото для дальнейшего скачивания
+    current_state = await state.get_state()
+    if current_state == TranslationState.waiting_for_back_photo.state:
+        # Это второе фото (задняя сторона)
+        photo = message.photo[-1]
+        data = await state.get_data()
+        file_ids = data.get("file_ids", [])
+        file_ids.append(photo.file_id)
+        await state.update_data(file_ids=file_ids)
+        await ask_for_doc_type(message, state)
+        return
+
+    # Иначе это первое фото: стартуем новую цепочку
+    await state.clear()
     photo = message.photo[-1]
-    await state.update_data(file_id=photo.file_id)
+    await state.update_data(file_ids=[photo.file_id])
     
-    # 3. Формируем клавиатуру динамически
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➡️ Без задней части (пропустить)", callback_data="skip_back_photo")]
+    ])
+    
+    await message.reply(
+        "📸 Передняя часть документа получена!\n\nЕсли у документа есть задняя часть, отправьте её сейчас (другой фотографией).\nЕсли задней части нет, нажмите кнопку ниже:",
+        reply_markup=keyboard
+    )
+    await state.set_state(TranslationState.waiting_for_back_photo)
+
+@router.callback_query(F.data == "skip_back_photo", TranslationState.waiting_for_back_photo)
+async def skip_back_photo_callback(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await ask_for_doc_type(callback.message, state, edit_message=True)
+
+async def ask_for_doc_type(message: types.Message, state: FSMContext, edit_message: bool = False):
+    """Отправляет или обновляет сообщение для выбора типа документа."""
     buttons = []
     doc_types = doc_manager.get_types()
     for doc_id, doc_info in doc_types.items():
@@ -53,11 +82,13 @@ async def handle_document_photo(message: types.Message, state: FSMContext):
         ])
         
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
-    await message.reply(
-        "📸 Фото получено!\nПожалуйста, выберите тип документа, чтобы мы могли правильно его перевести:",
-        reply_markup=keyboard
-    )
+    text = "📸 Все фото получены!\nПожалуйста, выберите тип документа, чтобы мы могли правильно его перевести:"
+
+    if edit_message:
+        await message.edit_text(text, reply_markup=keyboard)
+    else:
+        await message.reply(text, reply_markup=keyboard)
+        
     await state.set_state(TranslationState.choosing_doc_type)
 
 @router.callback_query(F.data.startswith("doctype_"), TranslationState.choosing_doc_type)
@@ -94,10 +125,10 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
     
     data = await state.get_data()
     doc_type = data.get("doc_type")
-    file_id = data.get("file_id")
+    file_ids = data.get("file_ids", [])
     await state.clear()
     
-    if not file_id or not doc_type:
+    if not file_ids or not doc_type:
         await callback.message.edit_text("❌ Ошибка: сессия устарела или данные не найдены. Пожалуйста, отправьте фото документа заново.")
         return
 
@@ -128,19 +159,22 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
     temp_dir = Path("temp")
     temp_dir.mkdir(exist_ok=True)
     
-    photo_path = temp_dir / f"doc_{callback.from_user.id}_{file_id}.jpg"
-    
-    # Скачиваем файл через bot.get_file
+    photo_paths = []
+    # Скачиваем все файлы
     try:
-        file = await callback.bot.get_file(file_id)
-        await callback.bot.download_file(file.file_path, destination=photo_path)
+        user_id = callback.from_user.id
+        for i, file_id in enumerate(file_ids):
+            photo_path = temp_dir / f"doc_{user_id}_{file_id}_{i}.jpg"
+            file = await callback.bot.get_file(file_id)
+            await callback.bot.download_file(file.file_path, destination=photo_path)
+            photo_paths.append(photo_path)
     except Exception as e:
         await processing_msg.edit_text(f"❌ Не удалось скачать фото:\n{str(e)}\n\nПопробуйте отправить заново.")
         return
     
     # Шаблоны и пути
     template_path = Path("templates") / current_config["template"]
-    output_path = temp_dir / f"result_{callback.from_user.id}_{file_id}.docx"
+    output_path = temp_dir / f"result_{callback.from_user.id}_{file_ids[0]}.docx"
     
     # Если шаблона еще нет, создаем пустышку для теста
     if not template_path.exists():
@@ -154,11 +188,12 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
         
     try:
         # Обновляем статус
-        await processing_msg.edit_text(f"⏳ Изображение анализируется ИИ Gemini...\n\nТип: {current_config['name']}\nПеревод на: {lang_name}")
+        total_photos = len(photo_paths)
+        await processing_msg.edit_text(f"⏳ Изображения ({total_photos} шт) анализируются ИИ Gemini...\n\nТип: {current_config['name']}\nПеревод на: {lang_name}")
         
         # Вызываем сервис
         extracted_data = await gemini_service.extract_data_from_image(
-            image_path=photo_path,
+            image_path=photo_paths,
             prompt=current_config["prompt"]
         )
         
@@ -166,8 +201,9 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
             raise ValueError(f"Ошибка Gemini: {extracted_data['error']}\n{extracted_data.get('raw_text', '')}")
 
         # Удаляем фото, так как оно больше не нужно
-        if photo_path.exists():
-            os.remove(photo_path)
+        for p in photo_paths:
+            if p.exists():
+                os.remove(p)
 
         await state.update_data(
             extracted_data=extracted_data,
@@ -183,8 +219,9 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
         
     except Exception as e:
         await processing_msg.edit_text(f"❌ Произошла ошибка при обработке:\n{str(e)}")
-        if photo_path.exists():
-            os.remove(photo_path)
+        for p in photo_paths:
+            if p.exists():
+                os.remove(p)
 
 def get_validation_keyboard(data_dict: dict, lang_code: str = "ru") -> InlineKeyboardMarkup:
     buttons = []

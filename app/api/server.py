@@ -15,7 +15,7 @@ async def start_api(container: Container):
     config = uvicorn.Config(
         app, 
         host=settings.API_HOST, 
-        port=settings.API_PORT, 
+        port=settings.PORT, 
         log_level="info"
     )
     server = uvicorn.Server(config)
