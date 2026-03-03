@@ -1,0 +1,98 @@
+{
+    "document_types": {
+        "id_card": {
+            "name": "ID карта",
+            "emoji": "🪪"
+        },
+        "passport": {
+            "name": "Загранпаспорт",
+            "emoji": "🛂"
+        }
+    },
+    "configs": {
+        "id_card": {
+            "prompt_fields": "given_name, surname, patronymic\ncitizenship, date_of_birth\ncard_number, date_of_issue, date_of_expiry, personal_identification_number, place_of_issue"
+        },
+        "passport": {
+            "prompt_fields": "type, state_code, passport_number\nsurname, given_name\ncitizenship, date_of_birth, birth_place\ndate_of_issue, authority, date_of_expiry"
+        }
+    },
+    "field_names": {
+        "ru": {
+            "given_name": "Имя",
+            "surname": "Фамилия",
+            "patronymic": "Отчество",
+            "citizenship": "Гражданство",
+            "date_of_birth": "Дата рождения",
+            "card_number": "Номер документа",
+            "date_of_issue": "Дата выдачи",
+            "date_of_expiry": "Срок действия",
+            "child_surname": "Фамилия ребенка",
+            "child_given_name": "Имя ребенка",
+            "child_patronymic": "Отчество ребенка",
+            "birth_place": "Место рождения",
+            "mother_fullname": "ФИО матери",
+            "mother_nationality": "Национальность матери",
+            "father_fullname": "ФИО отца",
+            "father_nationality": "Национальность отца",
+            "issue_place": "Орган выдачи",
+            "record_number": "Номер актовой записи",
+            "type": "Тип документа",
+            "state_code": "Код государства",
+            "passport_number": "Номер паспорта",
+            "authority": "Орган выдачи",
+            "first_name": "Имя",
+            "full_name": "ФИО",
+            "place_of_birth": "Место рождения",
+            "year_of_issue": "Год выдачи",
+            "expiry_date": "Срок окончания",
+            "passport_series": "Серия паспорта",
+            "date_of_registration": "Дата регистрации",
+            "personal_identification_number": "ПИНФЛ",
+            "place_of_issue": "МЕСТО ВЫДАЧИ",
+            "husband_full_name": "ФИО Мужа",
+            "wife_full_name": "ФИО Жены",
+            "registration_date": "Дата регистрации",
+            "husbands_full_name": "ФИО Мужа",
+            "wifes_full_name": "ФИО Жены"
+        },
+        "en": {
+            "given_name": "Given Name",
+            "surname": "Surname",
+            "patronymic": "Patronymic",
+            "citizenship": "Citizenship",
+            "date_of_birth": "Date of Birth",
+            "card_number": "Document Number",
+            "date_of_issue": "Date of Issue",
+            "date_of_expiry": "Date of Expiry",
+            "child_surname": "Child's Surname",
+            "child_given_name": "Child's Given Name",
+            "child_patronymic": "Child's Patronymic",
+            "birth_place": "Place of Birth",
+            "mother_fullname": "Mother's Full Name",
+            "mother_nationality": "Mother's Nationality",
+            "father_fullname": "Father's Full Name",
+            "father_nationality": "Father's Nationality",
+            "issue_place": "Issued by",
+            "record_number": "Record Number",
+            "type": "Type",
+            "state_code": "State Code",
+            "passport_number": "Passport Number",
+            "authority": "Authority",
+            "first_name": "Fist name",
+            "full_name": "Full Name",
+            "place_of_birth": "Place of Birth",
+            "year_of_issue": "Year of Issue",
+            "expiry_date": "Expiry Date",
+            "passport_series": "Passport Series",
+            "date_of_registration": "Date of Registration",
+            "personal_identification_number": "Personal Identification Number",
+            "place_of_issue": "Place of Issue",
+            "husband_full_name": "Husband's Full Name",
+            "wife_full_name": "Wife's Full Name",
+            "registration_date": "Registration Date",
+            "husbands_full_name": "Husband's Full Name",
+            "wifes_full_name": "Wife's Full Name"
+        }
+    }
+}
