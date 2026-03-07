@@ -3,6 +3,7 @@ import asyncio
 from pathlib import Path
 from docx import Document
 from aiogram import Router, types, F
+from aiogram.filters import CommandStart
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
@@ -49,6 +50,30 @@ def _generate_docx(gemini_service, extracted_data: dict, template_path: Path, ou
         template_path=template_path,
         output_path=output_path
     )
+
+@router.message(CommandStart())
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📄 Перевести документ", callback_data="menu_translate")],
+        [InlineKeyboardButton(text="📁 Мои последние документы", callback_data="menu_recent")],
+        [InlineKeyboardButton(text="❓ Как это работает", callback_data="menu_help")],
+        [InlineKeyboardButton(text="🌐 Выбрать язык", callback_data="menu_language")]
+    ])
+    text = (
+        "👋 **Pearl — перевод документов с помощью AI**\n\n"
+        "Что вы хотите сделать?"
+    )
+    await message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
+
+@router.callback_query(F.data == "menu_translate")
+async def menu_translate(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.answer("📸 Пожалуйста, отправьте фотографию документа (лицевую сторону) для перевода.")
+
+@router.callback_query(F.data.in_({"menu_recent", "menu_help", "menu_language"}))
+async def menu_stub(callback: CallbackQuery):
+    await callback.answer("⏳ Эта функция находится в разработке", show_alert=True)
 
 @router.message(F.photo)
 async def handle_document_photo(message: types.Message, state: FSMContext):
@@ -160,7 +185,7 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer()
     processing_msg = await callback.message.edit_text(
-        f"✅ Документ: **{current_config['name']}**\n✅ Язык перевода: **{lang_name}**\n\n⏳ Подготавливаю фото и отправляю на анализ ИИ...", 
+        f"✅ Документ: **{current_config['name']}**\n✅ Язык перевода: **{lang_name}**\n\n📸 Фото получено\n\n⏳ Обрабатываем документ...\n[1/3] Анализ изображения", 
         parse_mode="Markdown"
     )
 
@@ -188,7 +213,10 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
         
         # 3. Распознавание через Gemini
         total_photos = len(photo_paths)
-        await processing_msg.edit_text(f"⏳ Изображения ({total_photos} шт) анализируются ИИ Gemini...\n\nТип: {current_config['name']}\nПеревод на: {lang_name}")
+        await processing_msg.edit_text(
+            f"✅ Документ: **{current_config['name']}**\n✅ Язык перевода: **{lang_name}**\n\n📸 Фото получено\n\n⏳ Обрабатываем документ...\n[2/3] Извлечение данных",
+            parse_mode="Markdown"
+        )
         
         extracted_data = await gemini_service.extract_data_from_image(
             image_path=photo_paths,
@@ -199,6 +227,12 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
             raise ValueError(f"Ошибка Gemini: {extracted_data['error']}\n{extracted_data.get('raw_text', '')}")
 
         # 4. Обновление состояния и переход к валидации
+        await processing_msg.edit_text(
+            f"✅ Документ: **{current_config['name']}**\n✅ Язык перевода: **{lang_name}**\n\n📸 Фото получено\n\n✅ Обработка завершена\n[3/3] Подготовка документа",
+            parse_mode="Markdown"
+        )
+        await asyncio.sleep(1)
+        
         await state.update_data(
             extracted_data=extracted_data,
             template_path=str(template_path),
