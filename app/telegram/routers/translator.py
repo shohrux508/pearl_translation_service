@@ -1,11 +1,14 @@
 import os
-import json
+import asyncio
 from pathlib import Path
+from docx import Document
 from aiogram import Router, types, F
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+
 from app.container import Container
+from app.services.document_manager import doc_manager
 
 router = Router()
 container_instance: Container = None
@@ -17,24 +20,41 @@ class TranslationState(StatesGroup):
     validating_data = State()
     editing_field = State()
 
-from app.services.document_manager import doc_manager
-
 def setup_router(container: Container):
-    """
-    Инжектим контейнер в роутер.
-    """
+    """Инжектим контейнер в роутер."""
     global container_instance
     container_instance = container
 
+def get_gemini_service():
+    """Безопасное получение сервиса Gemini."""
+    try:
+        return container_instance.get("gemini_service")
+    except (KeyError, AttributeError):
+        return None
+
+def _create_temp_template(template_path: Path, doc_name: str, lang_name: str):
+    """Синхронная функция создания пустого шаблона (выполнять в to_thread)."""
+    if not template_path.exists():
+        template_path.parent.mkdir(exist_ok=True, parents=True)
+        doc = Document()
+        doc.add_paragraph(f"Временный тестовый шаблон для: {doc_name}")
+        doc.add_paragraph(f"Язык шаблона (и перевода): {lang_name}")
+        doc.add_paragraph("Данные будут автоматически вставляться, если шаблонизатор найдет совпадающие поля (например {{surname}}).")
+        doc.save(template_path)
+
+def _generate_docx(gemini_service, extracted_data: dict, template_path: Path, output_path: Path):
+    """Синхронная генерация Word-документа."""
+    gemini_service.insert_into_docx(
+        data=extracted_data,
+        template_path=template_path,
+        output_path=output_path
+    )
+
 @router.message(F.photo)
 async def handle_document_photo(message: types.Message, state: FSMContext):
-    """
-    Принимает первую или вторую фотографию документа.
-    """
-    # Проверка сервиса
-    try:
-        container_instance.get("gemini_service")
-    except KeyError:
+    """Принимает первую или вторую фотографию документа."""
+    gemini_service = get_gemini_service()
+    if not gemini_service:
         await message.reply("❌ Сервис перевода (Gemini) в данный момент недоступен. Проверьте API ключ.")
         return
 
@@ -93,36 +113,36 @@ async def ask_for_doc_type(message: types.Message, state: FSMContext, edit_messa
 
 @router.callback_query(F.data.startswith("doctype_"), TranslationState.choosing_doc_type)
 async def process_document_type(callback: CallbackQuery, state: FSMContext):
-    """
-    Обрабатывает выбор типа документа и предлагает выбрать язык перевода.
-    """
+    """Обрабатывает выбор типа документа и предлагает выбрать язык перевода."""
     doc_type = callback.data.replace("doctype_", "")
-    
-    # Сохраняем выбранный тип документа
     await state.update_data(doc_type=doc_type)
     
-    # Формируем клавиатуру для выбора языка
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🇷🇺 Русский язык", callback_data="lang_ru")],
         [InlineKeyboardButton(text="🇬🇧 Английский язык", callback_data="lang_en")]
     ])
     
-    # Подтверждаем клик
     await callback.answer()
-    
     await callback.message.edit_text(
         "✅ Тип документа выбран.\n\n🌐 Теперь, пожалуйста, выберите язык, на который нужно перевести данные:",
         reply_markup=keyboard
     )
     await state.set_state(TranslationState.choosing_language)
 
+async def download_photos(bot, user_id: int, file_ids: list, temp_dir: Path) -> list[Path]:
+    """Скачивает фото во временную директорию."""
+    photo_paths = []
+    for i, file_id in enumerate(file_ids):
+        photo_path = temp_dir / f"doc_{user_id}_{file_id}_{i}.jpg"
+        file = await bot.get_file(file_id)
+        await bot.download_file(file.file_path, destination=photo_path)
+        photo_paths.append(photo_path)
+    return photo_paths
+
 @router.callback_query(F.data.startswith("lang_"), TranslationState.choosing_language)
 async def process_language(callback: CallbackQuery, state: FSMContext):
-    """
-    Обрабатывает выбор языка и запускает пайплайн распознавания и перевода.
-    """
+    """Обрабатывает выбор языка и запускает пайплайн распознавания и перевода."""
     lang = callback.data.replace("lang_", "")
-    
     data = await state.get_data()
     doc_type = data.get("doc_type")
     file_ids = data.get("file_ids", [])
@@ -132,66 +152,44 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text("❌ Ошибка: сессия устарела или данные не найдены. Пожалуйста, отправьте фото документа заново.")
         return
 
-    # Настройки языка
     lang_name = "Русский" if lang == "ru" else "Английский"
-
-    # Получаем конфигурацию (промпт, имя шаблона)
     current_config = doc_manager.get_document_config(doc_type, lang)
     if not current_config:
         await callback.answer("Неизвестный тип документа", show_alert=True)
         return
 
-    # Подтверждаем клик
     await callback.answer()
     processing_msg = await callback.message.edit_text(
         f"✅ Документ: **{current_config['name']}**\n✅ Язык перевода: **{lang_name}**\n\n⏳ Подготавливаю фото и отправляю на анализ ИИ...", 
         parse_mode="Markdown"
     )
 
-    # Получаем сервис
-    try:
-        gemini_service = container_instance.get("gemini_service")
-    except KeyError:
+    gemini_service = get_gemini_service()
+    if not gemini_service:
         await processing_msg.edit_text("❌ Сервис перевода (Gemini) в данный момент недоступен. Проверьте API ключ.")
         return
 
-    # Создаем директории
     temp_dir = Path("temp")
     temp_dir.mkdir(exist_ok=True)
-    
     photo_paths = []
-    # Скачиваем все файлы
+    
     try:
-        user_id = callback.from_user.id
-        for i, file_id in enumerate(file_ids):
-            photo_path = temp_dir / f"doc_{user_id}_{file_id}_{i}.jpg"
-            file = await callback.bot.get_file(file_id)
-            await callback.bot.download_file(file.file_path, destination=photo_path)
-            photo_paths.append(photo_path)
-    except Exception as e:
-        await processing_msg.edit_text(f"❌ Не удалось скачать фото:\n{str(e)}\n\nПопробуйте отправить заново.")
-        return
-    
-    # Шаблоны и пути
-    template_path = Path("templates") / current_config["template"]
-    output_path = temp_dir / f"result_{callback.from_user.id}_{file_ids[0]}.docx"
-    
-    # Если шаблона еще нет, создаем пустышку для теста
-    if not template_path.exists():
-        template_path.parent.mkdir(exist_ok=True)
-        from docx import Document
-        doc = Document()
-        doc.add_paragraph(f"Временный тестовый шаблон для: {current_config['name']}")
-        doc.add_paragraph(f"Язык шаблона (и перевода): {lang_name}")
-        doc.add_paragraph("Данные будут автоматически вставляться, если шаблонизатор найдет совпадающие поля (например {{surname}}).")
-        doc.save(template_path)
+        # 1. Скачивание файлов
+        try:
+            photo_paths = await download_photos(callback.bot, callback.from_user.id, file_ids, temp_dir)
+        except Exception as e:
+            await processing_msg.edit_text(f"❌ Не удалось скачать фото:\n{str(e)}\n\nПопробуйте отправить заново.")
+            return
+
+        # 2. Подготовка шаблона в отдельном потоке (I/O)
+        template_path = Path("templates") / current_config["template"]
+        output_path = temp_dir / f"result_{callback.from_user.id}_{file_ids[0]}.docx"
+        await asyncio.to_thread(_create_temp_template, template_path, current_config["name"], lang_name)
         
-    try:
-        # Обновляем статус
+        # 3. Распознавание через Gemini
         total_photos = len(photo_paths)
         await processing_msg.edit_text(f"⏳ Изображения ({total_photos} шт) анализируются ИИ Gemini...\n\nТип: {current_config['name']}\nПеревод на: {lang_name}")
         
-        # Вызываем сервис
         extracted_data = await gemini_service.extract_data_from_image(
             image_path=photo_paths,
             prompt=current_config["prompt"]
@@ -200,11 +198,7 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
         if "error" in extracted_data:
             raise ValueError(f"Ошибка Gemini: {extracted_data['error']}\n{extracted_data.get('raw_text', '')}")
 
-        # Удаляем фото, так как оно больше не нужно
-        for p in photo_paths:
-            if p.exists():
-                os.remove(p)
-
+        # 4. Обновление состояния и переход к валидации
         await state.update_data(
             extracted_data=extracted_data,
             template_path=str(template_path),
@@ -215,13 +209,18 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
         await state.set_state(TranslationState.validating_data)
         
         await processing_msg.delete()
-        await send_validation_menu(processing_msg, extracted_data, lang_name, lang)
+        await send_validation_menu(callback.message, extracted_data, lang_name, lang)
         
     except Exception as e:
         await processing_msg.edit_text(f"❌ Произошла ошибка при обработке:\n{str(e)}")
+    finally:
+        # Гарантированное удаление фото
         for p in photo_paths:
             if p.exists():
-                os.remove(p)
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
 
 def get_validation_keyboard(data_dict: dict, lang_code: str = "ru") -> InlineKeyboardMarkup:
     buttons = []
@@ -229,22 +228,17 @@ def get_validation_keyboard(data_dict: dict, lang_code: str = "ru") -> InlineKey
     
     for key in data_dict.keys():
         localized_name = doc_manager.localize_field(key, lang_code)
-        # Ограничиваем длину текста на кнопке
         btn_text = f"✏️ {localized_name[:20]}"
-        
-        # restriction is 64 bytes.
         cb_data = f"editf_{key}"
         if len(cb_data) > 64:
             cb_data = cb_data[:64]
             
         current_row.append(InlineKeyboardButton(text=btn_text, callback_data=cb_data))
         
-        # По 2 кнопки в ряд
         if len(current_row) == 2:
             buttons.append(current_row)
             current_row = []
             
-    # Добавляем оставшуюся кнопку, если есть
     if current_row:
         buttons.append(current_row)
     
@@ -288,26 +282,27 @@ async def process_edit_field_selection(callback: CallbackQuery, state: FSMContex
 
 @router.message(TranslationState.editing_field)
 async def process_new_field_value(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    extracted_data = data.get("extracted_data", {})
+    lang_code = data.get("lang_code", "ru")
+    lang_name = data.get("lang_name", "выбранный")
+
     if message.text == "/cancel":
         await state.set_state(TranslationState.validating_data)
-        data = await state.get_data()
-        await send_validation_menu(message, data.get("extracted_data", {}), data.get("lang_name", "выбранный"), data.get("lang_code", "ru"))
+        await send_validation_menu(message, extracted_data, lang_name, lang_code)
         return
 
     new_value = message.text
-    data = await state.get_data()
     field_key = data.get("editing_field_name")
-    extracted_data = data.get("extracted_data", {})
-    lang_code = data.get("lang_code", "ru")
     
-    # Обновляем значение
-    extracted_data[field_key] = new_value
-    await state.update_data(extracted_data=extracted_data)
+    if field_key:
+        extracted_data[field_key] = new_value
+        await state.update_data(extracted_data=extracted_data)
     
     await state.set_state(TranslationState.validating_data)
     ok_msg = "✅ Значение изменено!" if lang_code == "ru" else "✅ Value updated!"
     await message.reply(ok_msg)
-    await send_validation_menu(message, extracted_data, data.get("lang_name", "выбранный"), lang_code)
+    await send_validation_menu(message, extracted_data, lang_name, lang_code)
 
 @router.callback_query(F.data == "confirm_generation", TranslationState.validating_data)
 async def confirm_generation(callback: CallbackQuery, state: FSMContext):
@@ -316,23 +311,30 @@ async def confirm_generation(callback: CallbackQuery, state: FSMContext):
     
     data = await state.get_data()
     extracted_data = data.get("extracted_data", {})
-    template_path = Path(data.get("template_path"))
-    output_path = Path(data.get("output_path"))
+    
+    template_path_str = data.get("template_path")
+    output_path_str = data.get("output_path")
+    
+    if not template_path_str or not output_path_str:
+        await processing_msg.edit_text("❌ Ошибка: пути к файлам не найдены в сессии. Начните заново.")
+        await state.clear()
+        return
+        
+    template_path = Path(template_path_str)
+    output_path = Path(output_path_str)
     lang_name = data.get("lang_name", "Выбранный")
     
+    gemini_service = get_gemini_service()
+    if not gemini_service:
+        await processing_msg.edit_text("❌ Сервис перевода (Gemini) в данный момент недоступен.")
+        return
+
     try:
-        gemini_service = container_instance.get("gemini_service")
-        
-        # Вставляем данные в Word
-        gemini_service.insert_into_docx(
-            data=extracted_data,
-            template_path=template_path,
-            output_path=output_path
-        )
+        # Вставляем данные в Word (I/O, в отдельном потоке)
+        await asyncio.to_thread(_generate_docx, gemini_service, extracted_data, template_path, output_path)
         
         # Отправляем готовый Word
         await processing_msg.edit_text("✅ Документ готов! Отправляю файл...")
-        
         document = FSInputFile(output_path)
         await callback.message.answer_document(document, caption=f"Вот ваш проверенный перевод на {lang_name.lower()} язык!")
         
@@ -341,5 +343,8 @@ async def confirm_generation(callback: CallbackQuery, state: FSMContext):
         
     finally:
         if output_path.exists():
-            os.remove(output_path)
+            try:
+                os.remove(output_path)
+            except Exception:
+                pass
         await state.clear()
