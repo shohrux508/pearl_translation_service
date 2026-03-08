@@ -1,10 +1,11 @@
 import os
 import asyncio
+import logging
 from pathlib import Path
 from docx import Document
 from aiogram import Router, types, F
 from aiogram.filters import CommandStart
-from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 
@@ -14,8 +15,37 @@ from app.services.document_manager import doc_manager
 router = Router()
 container_instance: Container = None
 
+START_GREETING = (
+    "👋 **Pearl — перевод документов с помощью AI**\n\n"
+    "Что вы хотите сделать?"
+)
+
+PHOTO_INSTRUCTION_TEXT = (
+    "📷 **Сфотографируйте документ**\n\n"
+    "Советы для лучшего распознавания:\n"
+    "• хороший свет\n"
+    "• весь документ в кадре\n"
+    "• без бликов"
+)
+
+HELP_TEXT = (
+    "❓ **Как это работает**\n\n"
+    "1️⃣ Отправьте фото документа (или нескольких страниц)\n"
+    "2️⃣ Проверьте распознанные поля и отредактируйте их при необходимости\n"
+    "3️⃣ Получите готовый перевод в формате Word"
+)
+
+ERROR_MSG_RECOGNITION = (
+    "⚠️ Не удалось распознать документ\n\n"
+    "Причины:\n"
+    "• плохое освещение\n"
+    "• размытое фото\n"
+    "• часть документа не попала в кадр\n\n"
+    "Попробуйте отправить фото снова."
+)
+
 class TranslationState(StatesGroup):
-    waiting_for_back_photo = State()
+    waiting_for_photos = State()
     choosing_doc_type = State()
     choosing_language = State()
     validating_data = State()
@@ -54,67 +84,92 @@ def _generate_docx(gemini_service, extracted_data: dict, template_path: Path, ou
 @router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📄 Перевести документ", callback_data="menu_translate")],
-        [InlineKeyboardButton(text="📁 Мои последние документы", callback_data="menu_recent")],
-        [InlineKeyboardButton(text="❓ Как это работает", callback_data="menu_help")],
-        [InlineKeyboardButton(text="🌐 Выбрать язык", callback_data="menu_language")]
-    ])
-    text = (
-        "👋 **Pearl — перевод документов с помощью AI**\n\n"
-        "Что вы хотите сделать?"
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📄 Перевести документ"), KeyboardButton(text="📁 Мои последние документы")],
+            [KeyboardButton(text="❓ Как это работает"), KeyboardButton(text="🌐 Выбрать язык")]
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выберите действие ниже"
     )
-    await message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
+    await message.answer(START_GREETING, reply_markup=keyboard, parse_mode="Markdown")
 
-@router.callback_query(F.data == "menu_translate")
-async def menu_translate(callback: CallbackQuery, state: FSMContext):
+@router.message(F.text == "📄 Перевести документ")
+async def menu_translate(message: types.Message, state: FSMContext):
+    await state.clear()
+    await state.set_state(TranslationState.waiting_for_photos)
+    await message.answer(PHOTO_INSTRUCTION_TEXT, reply_markup=ReplyKeyboardRemove(), parse_mode="Markdown")
+
+@router.message(F.text == "❓ Как это работает")
+async def menu_help(message: types.Message):
+    await message.answer(HELP_TEXT, parse_mode="Markdown")
+
+@router.message(F.text.in_({"📁 Мои последние документы", "🌐 Выбрать язык"}))
+async def menu_stub(message: types.Message):
+    await message.answer("⏳ Эта функция находится в разработке", show_alert=True)
+
+@router.callback_query(F.data == "retry_photo")
+async def retry_photo_callback(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    await callback.message.answer("📸 Пожалуйста, отправьте фотографию документа (лицевую сторону) для перевода.")
+    await state.clear()
+    await state.set_state(TranslationState.waiting_for_photos)
+    await callback.message.edit_text(PHOTO_INSTRUCTION_TEXT, parse_mode="Markdown")
 
-@router.callback_query(F.data.in_({"menu_recent", "menu_help", "menu_language"}))
-async def menu_stub(callback: CallbackQuery):
-    await callback.answer("⏳ Эта функция находится в разработке", show_alert=True)
-
-@router.message(F.photo)
+@router.message(F.photo, TranslationState.waiting_for_photos)
 async def handle_document_photo(message: types.Message, state: FSMContext):
-    """Принимает первую или вторую фотографию документа."""
+    """Принимает фотографии документа, накапливая их."""
     gemini_service = get_gemini_service()
     if not gemini_service:
         await message.reply("❌ Сервис перевода (Gemini) в данный момент недоступен. Проверьте API ключ.")
         return
 
-    current_state = await state.get_state()
-    if current_state == TranslationState.waiting_for_back_photo.state:
-        # Это второе фото (задняя сторона)
-        photo = message.photo[-1]
-        data = await state.get_data()
-        file_ids = data.get("file_ids", [])
-        file_ids.append(photo.file_id)
-        await state.update_data(file_ids=file_ids)
-        await ask_for_doc_type(message, state)
-        return
-
-    # Иначе это первое фото: стартуем новую цепочку
-    await state.clear()
+    data = await state.get_data()
+    file_ids = data.get("file_ids", [])
+    
     photo = message.photo[-1]
-    await state.update_data(file_ids=[photo.file_id])
+    file_ids.append(photo.file_id)
+    await state.update_data(file_ids=file_ids)
+    
+    total_pages = len(file_ids)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➡️ Без задней части (пропустить)", callback_data="skip_back_photo")]
+        [InlineKeyboardButton(text="▶️ Начать распознавание", callback_data="start_recognition")]
     ])
     
-    await message.reply(
-        "📸 Передняя часть документа получена!\n\nЕсли у документа есть задняя часть, отправьте её сейчас (другой фотографией).\nЕсли задней части нет, нажмите кнопку ниже:",
-        reply_markup=keyboard
-    )
-    await state.set_state(TranslationState.waiting_for_back_photo)
+    text = f"📄 Получено **{total_pages}** страниц документа\n\nМожете отправить еще фото, либо нажмите кнопку ниже для продолжения:"
+    
+    # Check if there is already a message tracking this grouped upload to edit it, or send a new one
+    last_msg_id = data.get("last_tracking_msg_id")
+    if last_msg_id:
+        try:
+            await message.bot.edit_message_text(
+                chat_id=message.chat.id, 
+                message_id=last_msg_id, 
+                text=text, 
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        except Exception:
+             # Just send a new message if editing fails
+             msg = await message.reply(text, reply_markup=keyboard, parse_mode="Markdown")
+             await state.update_data(last_tracking_msg_id=msg.message_id)
+    else:
+        msg = await message.reply(text, reply_markup=keyboard, parse_mode="Markdown")
+        await state.update_data(last_tracking_msg_id=msg.message_id)
 
-@router.callback_query(F.data == "skip_back_photo", TranslationState.waiting_for_back_photo)
-async def skip_back_photo_callback(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data == "start_recognition", TranslationState.waiting_for_photos)
+async def start_recognition_callback(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    data = await state.get_data()
+    file_ids = data.get("file_ids", [])
+    
+    if not file_ids:
+        await callback.message.answer("❌ Ошибка: фото не найдены. Отправьте фото заново.")
+        return
+        
     await ask_for_doc_type(callback.message, state, edit_message=True)
 
-async def ask_for_doc_type(message: types.Message, state: FSMContext, edit_message: bool = False):
+async def ask_for_doc_type(message: types.Message, state: FSMContext, edit_message: bool = False) -> None:
     """Отправляет или обновляет сообщение для выбора типа документа."""
     buttons = []
     doc_types = doc_manager.get_types()
@@ -203,6 +258,7 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
         try:
             photo_paths = await download_photos(callback.bot, callback.from_user.id, file_ids, temp_dir)
         except Exception as e:
+            logging.exception("Failed to download photos")
             await processing_msg.edit_text(f"❌ Не удалось скачать фото:\n{str(e)}\n\nПопробуйте отправить заново.")
             return
 
@@ -245,7 +301,15 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
         await processing_msg.delete()
         await send_validation_menu(callback.message, extracted_data, lang_name, lang)
         
+    except ValueError as e:
+        logging.warning(f"Recognition failed during processing: {e}")
+        retry_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📸 Отправить новое фото", callback_data="retry_photo")]
+        ])
+        await processing_msg.edit_text(ERROR_MSG_RECOGNITION, reply_markup=retry_kb)
+        
     except Exception as e:
+        logging.exception("Error processing document language pipeline")
         await processing_msg.edit_text(f"❌ Произошла ошибка при обработке:\n{str(e)}")
     finally:
         # Гарантированное удаление фото
@@ -254,7 +318,7 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
                 try:
                     os.remove(p)
                 except Exception:
-                    pass
+                    logging.exception(f"Failed to delete temp file {p}")
 
 def get_validation_keyboard(data_dict: dict, lang_code: str = "ru") -> InlineKeyboardMarkup:
     buttons = []
