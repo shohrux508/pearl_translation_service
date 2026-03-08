@@ -2,7 +2,6 @@ import json
 import logging
 from pathlib import Path
 from typing import Dict, Any, Union
-from docxtpl import DocxTemplate
 import google.generativeai as genai
 import PIL.Image
 
@@ -13,7 +12,6 @@ class GeminiTranslationService:
     Сервис для работы с Gemini API:
     - Загрузка изображений
     - Извлечение данных в формате JSON
-    - Вставка извлеченных данных в Word (.docx) документ
     """
     
     def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash"):
@@ -126,47 +124,3 @@ class GeminiTranslationService:
             logger.error(f"Непредвиденная ошибка при обращении к Gemini (fields): {e}")
             raise e
 
-    def insert_into_docx(
-        self, 
-        data: Dict[str, Any], 
-        template_path: Union[str, Path], 
-        output_path: Union[str, Path]
-    ) -> str:
-        """
-        Берет JSON-словарь извлеченных данных и заменяет плейсхолдеры 
-        (например, {{key}}) в .docx шаблоне.
-        """
-        logger.info(f"Открытие шаблона {template_path} для вставки данных...")
-        doc = DocxTemplate(template_path)
-        doc.render(data)
-        doc.save(output_path)
-        logger.info(f"Документ успешно сохранен: {output_path}")
-        return output_path
-
-    async def process_translation(
-        self, 
-        template_path: Union[str, Path], 
-        output_path: Union[str, Path],
-        image_path: Union[str, Path] = None, 
-        prompt: str = None, 
-        test_json_response: Dict[str, Any] = None
-    ) -> str:
-        """
-        Полный цикл сценария: Изображение -> Данные (JSON) -> .docx
-        При тестировании можно передать test_json_response и пропустить шаг Gemini.
-        """
-        # Шаг 1: Извлекаем JSON (от API или из тестовых данных)
-        extracted_data = await self.extract_data_from_image(
-            image_path=image_path, 
-            prompt=prompt, 
-            test_json_response=test_json_response
-        )
-        
-        if "error" in extracted_data:
-            logger.error("Процесс был прерван из-за ошибки извлечения.")
-            raise ValueError("Не удалось корректно извлечь данные.")
-
-        # Шаг 2: Вставляем извлеченный JSON в шаблон Word
-        result_path = self.insert_into_docx(extracted_data, template_path, output_path)
-        
-        return result_path

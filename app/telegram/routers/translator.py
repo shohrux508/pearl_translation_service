@@ -1,8 +1,6 @@
-import os
 import asyncio
 import logging
 from pathlib import Path
-from docx import Document
 from aiogram import Router, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -56,30 +54,16 @@ def setup_router(container: Container):
     global container_instance
     container_instance = container
 
-def get_gemini_service():
-    """Безопасное получение сервиса Gemini."""
+def get_service(name: str):
+    """Безопасное получение сервиса из DI контейнера."""
     try:
-        return container_instance.get("gemini_service")
+        return container_instance.get(name)
     except (KeyError, AttributeError):
         return None
 
-def _create_temp_template(template_path: Path, doc_name: str, lang_name: str):
-    """Синхронная функция создания пустого шаблона (выполнять в to_thread)."""
-    if not template_path.exists():
-        template_path.parent.mkdir(exist_ok=True, parents=True)
-        doc = Document()
-        doc.add_paragraph(f"Временный тестовый шаблон для: {doc_name}")
-        doc.add_paragraph(f"Язык шаблона (и перевода): {lang_name}")
-        doc.add_paragraph("Данные будут автоматически вставляться, если шаблонизатор найдет совпадающие поля (например {{surname}}).")
-        doc.save(template_path)
-
-def _generate_docx(gemini_service, extracted_data: dict, template_path: Path, output_path: Path):
-    """Синхронная генерация Word-документа."""
-    gemini_service.insert_into_docx(
-        data=extracted_data,
-        template_path=template_path,
-        output_path=output_path
-    )
+def get_gemini_service():
+    """Безопасное получение сервиса Gemini (оставлено для совместимости)."""
+    return get_service("gemini_service")
 
 @router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
@@ -209,16 +193,6 @@ async def process_document_type(callback: CallbackQuery, state: FSMContext):
     )
     await state.set_state(TranslationState.choosing_language)
 
-async def download_photos(bot, user_id: int, file_ids: list, temp_dir: Path) -> list[Path]:
-    """Скачивает фото во временную директорию."""
-    photo_paths = []
-    for i, file_id in enumerate(file_ids):
-        photo_path = temp_dir / f"doc_{user_id}_{file_id}_{i}.jpg"
-        file = await bot.get_file(file_id)
-        await bot.download_file(file.file_path, destination=photo_path)
-        photo_paths.append(photo_path)
-    return photo_paths
-
 @router.callback_query(F.data.startswith("lang_"), TranslationState.choosing_language)
 async def process_language(callback: CallbackQuery, state: FSMContext):
     """Обрабатывает выбор языка и запускает пайплайн распознавания и перевода."""
@@ -245,18 +219,19 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
     )
 
     gemini_service = get_gemini_service()
-    if not gemini_service:
-        await processing_msg.edit_text("❌ Сервис перевода (Gemini) в данный момент недоступен. Проверьте API ключ.")
+    docx_service = get_service("docx_service")
+    file_manager = get_service("file_manager")
+    
+    if not gemini_service or not docx_service or not file_manager:
+        await processing_msg.edit_text("❌ Сервисы (Gemini, Docx, FileManager) в данный момент недоступны.")
         return
 
-    temp_dir = Path("temp")
-    temp_dir.mkdir(exist_ok=True)
     photo_paths = []
     
     try:
         # 1. Скачивание файлов
         try:
-            photo_paths = await download_photos(callback.bot, callback.from_user.id, file_ids, temp_dir)
+            photo_paths = await file_manager.download_photos(callback.bot, callback.from_user.id, file_ids)
         except Exception as e:
             logging.exception("Failed to download photos")
             await processing_msg.edit_text(f"❌ Не удалось скачать фото:\n{str(e)}\n\nПопробуйте отправить заново.")
@@ -264,8 +239,8 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
 
         # 2. Подготовка шаблона в отдельном потоке (I/O)
         template_path = Path("templates") / current_config["template"]
-        output_path = temp_dir / f"result_{callback.from_user.id}_{file_ids[0]}.docx"
-        await asyncio.to_thread(_create_temp_template, template_path, current_config["name"], lang_name)
+        output_path = file_manager.get_output_path(callback.from_user.id, file_ids[0])
+        await asyncio.to_thread(docx_service.create_temp_template, template_path, current_config["name"], lang_name)
         
         # 3. Распознавание через Gemini
         total_photos = len(photo_paths)
@@ -313,12 +288,8 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
         await processing_msg.edit_text(f"❌ Произошла ошибка при обработке:\n{str(e)}")
     finally:
         # Гарантированное удаление фото
-        for p in photo_paths:
-            if p.exists():
-                try:
-                    os.remove(p)
-                except Exception:
-                    logging.exception(f"Failed to delete temp file {p}")
+        if file_manager:
+            file_manager.cleanup_files(photo_paths)
 
 def get_validation_keyboard(data_dict: dict, lang_code: str = "ru") -> InlineKeyboardMarkup:
     buttons = []
@@ -423,13 +394,16 @@ async def confirm_generation(callback: CallbackQuery, state: FSMContext):
     lang_name = data.get("lang_name", "Выбранный")
     
     gemini_service = get_gemini_service()
-    if not gemini_service:
-        await processing_msg.edit_text("❌ Сервис перевода (Gemini) в данный момент недоступен.")
+    docx_service = get_service("docx_service")
+    file_manager = get_service("file_manager")
+    
+    if not gemini_service or not docx_service or not file_manager:
+        await processing_msg.edit_text("❌ Сервисы (Gemini, Docx, FileManager) в данный момент недоступны.")
         return
 
     try:
         # Вставляем данные в Word (I/O, в отдельном потоке)
-        await asyncio.to_thread(_generate_docx, gemini_service, extracted_data, template_path, output_path)
+        await asyncio.to_thread(docx_service.generate_docx, extracted_data, template_path, output_path)
         
         # Отправляем готовый Word
         await processing_msg.edit_text("✅ Документ готов! Отправляю файл...")
@@ -440,9 +414,6 @@ async def confirm_generation(callback: CallbackQuery, state: FSMContext):
         await processing_msg.edit_text(f"❌ Произошла ошибка при генерации документа:\n{str(e)}")
         
     finally:
-        if output_path.exists():
-            try:
-                os.remove(output_path)
-            except Exception:
-                pass
+        if file_manager:
+            file_manager.cleanup_files([output_path])
         await state.clear()
