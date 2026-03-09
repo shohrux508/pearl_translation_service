@@ -36,6 +36,7 @@ class GeminiTranslationService:
         self, 
         image_path: Union[str, Path, list[Union[str, Path]]] = None, 
         prompt: str = None,
+        json_schema: Dict[str, Any] = None,
         test_json_response: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
@@ -50,6 +51,14 @@ class GeminiTranslationService:
             
         # Используем дефолтный промпт, если не передан свой
         current_prompt = prompt or self.default_prompt
+        
+        if json_schema:
+            schema_instruction = (
+                "\n\nReturn strictly valid JSON according to the provided schema. "
+                "Do not include markdown formatting or explanations.\n"
+                f"JSON Schema:\n{json.dumps(json_schema, ensure_ascii=False, indent=2)}"
+            )
+            current_prompt += schema_instruction
             
         try:
             contents = [current_prompt]

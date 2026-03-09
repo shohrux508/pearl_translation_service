@@ -48,6 +48,9 @@ class TranslationState(StatesGroup):
     choosing_language = State()
     validating_data = State()
     editing_field = State()
+    editing_raw_json = State()
+    viewing_table = State()
+    editing_table_row = State()
 
 def setup_router(container: Container):
     """Инжектим контейнер в роутер."""
@@ -251,7 +254,8 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
         
         extracted_data = await gemini_service.extract_data_from_image(
             image_path=photo_paths,
-            prompt=current_config["prompt"]
+            prompt=current_config["prompt"],
+            json_schema=current_config.get("json_schema")
         )
         
         if "error" in extracted_data:
@@ -293,23 +297,54 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
 
 def get_validation_keyboard(data_dict: dict, lang_code: str = "ru") -> InlineKeyboardMarkup:
     buttons = []
-    current_row = []
     
-    for key in data_dict.keys():
-        localized_name = doc_manager.localize_field(key, lang_code)
-        btn_text = f"✏️ {localized_name[:20]}"
-        cb_data = f"editf_{key}"
-        if len(cb_data) > 64:
-            cb_data = cb_data[:64]
-            
-        current_row.append(InlineKeyboardButton(text=btn_text, callback_data=cb_data))
+    # Check if this is the new schema format (has fields, tables, etc) or flat format
+    has_schema = "fields" in data_dict or "tables" in data_dict
+    
+    if has_schema:
+        fields = data_dict.get("fields", {})
+        tables = data_dict.get("tables", {})
         
-        if len(current_row) == 2:
+        # Add basic fields as editable buttons
+        current_row = []
+        for key in fields.keys():
+            localized_name = doc_manager.localize_field(key, lang_code)
+            btn_text = f"✏️ {localized_name[:20]}"
+            cb_data = f"editf_{key}"
+            if len(cb_data) > 64: cb_data = cb_data[:64]
+            current_row.append(InlineKeyboardButton(text=btn_text, callback_data=cb_data))
+            if len(current_row) == 2:
+                buttons.append(current_row)
+                current_row = []
+        if current_row:
             buttons.append(current_row)
-            current_row = []
             
-    if current_row:
-        buttons.append(current_row)
+        # Add table buttons
+        for table_key in tables.keys():
+            localized_name = doc_manager.localize_field(table_key, lang_code)
+            btn_text = f"📊 Редактировать {localized_name[:15]}" if lang_code == "ru" else f"📊 Edit {localized_name[:15]}"
+            cb_data = f"viewt_{table_key}_0"
+            if len(cb_data) > 64: cb_data = cb_data[:64]
+            buttons.append([InlineKeyboardButton(text=btn_text, callback_data=cb_data)])
+            
+        # Raw JSON mode
+        raw_text = "⚙️ Проверить сырые данные (JSON)" if lang_code == "ru" else "⚙️ Check raw data (JSON)"
+        buttons.append([InlineKeyboardButton(text=raw_text, callback_data="raw_json_mode")])
+        
+    else:
+        # Legacy flat mapping
+        current_row = []
+        for key in data_dict.keys():
+            localized_name = doc_manager.localize_field(key, lang_code)
+            btn_text = f"✏️ {localized_name[:20]}"
+            cb_data = f"editf_{key}"
+            if len(cb_data) > 64: cb_data = cb_data[:64]
+            current_row.append(InlineKeyboardButton(text=btn_text, callback_data=cb_data))
+            if len(current_row) == 2:
+                buttons.append(current_row)
+                current_row = []
+        if current_row:
+            buttons.append(current_row)
     
     confirm_text = "✅ Подтвердить и создать" if lang_code == "ru" else "✅ Confirm and generate"
     buttons.append([InlineKeyboardButton(text=confirm_text, callback_data="confirm_generation")])
@@ -318,14 +353,91 @@ def get_validation_keyboard(data_dict: dict, lang_code: str = "ru") -> InlineKey
 async def send_validation_menu(message: types.Message, data_dict: dict, lang_name: str = "выбранный", lang_code: str = "ru"):
     title = f"🤖 **Результат распознавания ({lang_name}):**\n" if lang_code == "ru" else f"🤖 **Extraction Result ({lang_name}):**\n"
     lines = [title]
-    for k, v in data_dict.items():
-        localized_name = doc_manager.localize_field(k, lang_code)
-        lines.append(f"▪️ **{localized_name}**: `{v}`")
+    has_schema = "fields" in data_dict or "tables" in data_dict
+    
+    if has_schema:
+        # Construct a beautiful summary
+        metadata = data_dict.get("metadata", {})
+        fields = data_dict.get("fields", {})
+        tables = data_dict.get("tables", {})
         
-    instr = "\n_Нажмите на кнопку с именем поля ниже, если нужно его исправить._" if lang_code == "ru" else "\n_Click on the field name below if you need to manually fix it._"
+        # Show key fields for summary (limit to 3-5 fields)
+        lines.append("📌 **Общие сведения:**" if lang_code == "ru" else "📌 **General Information:**")
+        count = 0
+        for k, v in fields.items():
+            if count >= 4:
+                break
+            localized_name = doc_manager.localize_field(k, lang_code)
+            lines.append(f"▪️ **{localized_name}**: `{v}`")
+            count += 1
+            
+        # Summary for tables
+        for tk, tv in tables.items():
+            if isinstance(tv, list):
+                localized_name = doc_manager.localize_field(tk, lang_code)
+                lines.append(f"📋 **{localized_name}**: распознано {len(tv)} строк" if lang_code == "ru" else f"📋 **{localized_name}**: {len(tv)} rows extracted")
+                
+        instr = "\n_Всё верно? Если нужно, отредактируйте данные ниже._" if lang_code == "ru" else "\n_Is everything correct? Edit data below if needed._"
+    else:
+        # Legacy flat view
+        for k, v in data_dict.items():
+            localized_name = doc_manager.localize_field(k, lang_code)
+            lines.append(f"▪️ **{localized_name}**: `{v}`")
+        instr = "\n_Нажмите на кнопку с именем поля ниже, если нужно его исправить._" if lang_code == "ru" else "\n_Click on the field name below if you need to manually fix it._"
+        
     text = "\n".join(lines) + "\n" + instr
     
     await message.answer(text, reply_markup=get_validation_keyboard(data_dict, lang_code), parse_mode="Markdown")
+
+@router.callback_query(F.data == "raw_json_mode", TranslationState.validating_data)
+async def process_raw_json_mode(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    data = await state.get_data()
+    extracted_data = data.get("extracted_data", {})
+    lang_code = data.get("lang_code", "ru")
+    
+    import json
+    json_text = json.dumps(extracted_data, ensure_ascii=False, indent=2)
+    
+    prompt = (
+        "⚙️ **Режим сырых данных (JSON)**\n\n"
+        "Скопируйте текст ниже, исправьте нужные значения и отправьте обратно.\n"
+        "Для отмены отправьте /cancel\n\n"
+        f"```json\n{json_text}\n```"
+    ) if lang_code == "ru" else (
+        "⚙️ **Raw JSON Mode**\n\n"
+        "Copy the text below, fix the values and send it back.\n"
+        "To cancel, send /cancel\n\n"
+        f"```json\n{json_text}\n```"
+    )
+    
+    await state.set_state(TranslationState.editing_raw_json)
+    await callback.message.answer(prompt, parse_mode="Markdown")
+
+@router.message(TranslationState.editing_raw_json)
+async def process_new_raw_json(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    extracted_data = data.get("extracted_data", {})
+    lang_code = data.get("lang_code", "ru")
+    lang_name = data.get("lang_name", "выбранный")
+
+    if message.text == "/cancel":
+        await state.set_state(TranslationState.validating_data)
+        await send_validation_menu(message, extracted_data, lang_name, lang_code)
+        return
+
+    import json
+    try:
+        new_data = json.loads(message.text)
+        await state.update_data(extracted_data=new_data)
+        await state.set_state(TranslationState.validating_data)
+        
+        ok_msg = "✅ Данные успешно обновлены!" if lang_code == "ru" else "✅ Data successfully updated!"
+        await message.reply(ok_msg)
+        await send_validation_menu(message, new_data, lang_name, lang_code)
+    except json.JSONDecodeError:
+        err_msg = "❌ Ошибка формата JSON. Пожалуйста, проверьте синтаксис и отправьте заново." if lang_code == "ru" else "❌ JSON format error. Please check syntax and send again."
+        await message.reply(err_msg)
 
 @router.callback_query(F.data.startswith("editf_"), TranslationState.validating_data)
 async def process_edit_field_selection(callback: CallbackQuery, state: FSMContext):
@@ -337,7 +449,13 @@ async def process_edit_field_selection(callback: CallbackQuery, state: FSMContex
     
     data = await state.get_data()
     extracted_data = data.get("extracted_data", {})
-    current_value = extracted_data.get(field_key, "")
+    
+    # Handle both schema and flat formats
+    if "fields" in extracted_data:
+        current_value = extracted_data.get("fields", {}).get(field_key, "")
+    else:
+        current_value = extracted_data.get(field_key, "")
+        
     lang_code = data.get("lang_code", "ru")
     localized_name = doc_manager.localize_field(field_key, lang_code)
     
@@ -365,13 +483,159 @@ async def process_new_field_value(message: types.Message, state: FSMContext):
     field_key = data.get("editing_field_name")
     
     if field_key:
-        extracted_data[field_key] = new_value
+        if "fields" in extracted_data:
+            extracted_data["fields"][field_key] = new_value
+        else:
+            extracted_data[field_key] = new_value
+            
         await state.update_data(extracted_data=extracted_data)
     
     await state.set_state(TranslationState.validating_data)
     ok_msg = "✅ Значение изменено!" if lang_code == "ru" else "✅ Value updated!"
     await message.reply(ok_msg)
     await send_validation_menu(message, extracted_data, lang_name, lang_code)
+
+@router.callback_query(F.data.startswith("viewt_"), TranslationState.validating_data)
+async def process_view_table(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.replace("viewt_", "").rsplit("_", 1)
+    table_key = parts[0]
+    page = int(parts[1]) if len(parts) > 1 else 0
+    
+    data = await state.get_data()
+    extracted_data = data.get("extracted_data", {})
+    lang_code = data.get("lang_code", "ru")
+    
+    tables = extracted_data.get("tables", {})
+    table_data = tables.get(table_key, [])
+    
+    if not isinstance(table_data, list):
+        await callback.answer("Ошибка: неверный формат таблицы", show_alert=True)
+        return
+        
+    ITEMS_PER_PAGE = 5
+    total_pages = (len(table_data) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+    start_idx = page * ITEMS_PER_PAGE
+    end_idx = min(start_idx + ITEMS_PER_PAGE, len(table_data))
+    
+    # Store context for returning later
+    await state.update_data(viewing_table_key=table_key, viewing_table_page=page)
+    await state.set_state(TranslationState.viewing_table)
+    
+    localized_name = doc_manager.localize_field(table_key, lang_code)
+    title = f"📊 **Таблица {localized_name}**" if lang_code == "ru" else f"📊 **Table {localized_name}**"
+    
+    lines = [f"{title} (стр. {page + 1} из {max(1, total_pages)})", ""]
+    
+    buttons = []
+    
+    for i in range(start_idx, end_idx):
+        row = table_data[i]
+        # Create a tiny summary of the row
+        preview = ", ".join([f"{k}: {v}" for k, v in list(row.items())[:2]])
+        if len(preview) > 30: preview = preview[:27] + "..."
+        
+        lines.append(f"#{i+1}: `{preview}`")
+        btn_text = f"✏️ Строка {i+1}" if lang_code == "ru" else f"✏️ Row {i+1}"
+        
+        cb_data = f"editt_{table_key}_{i}"
+        if len(cb_data) > 64: cb_data = cb_data[:64]
+        buttons.append([InlineKeyboardButton(text=btn_text, callback_data=cb_data)])
+        
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"viewt_{table_key}_{page-1}"))
+    if page < total_pages - 1:
+        nav_row.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"viewt_{table_key}_{page+1}"))
+    
+    if nav_row:
+        buttons.append(nav_row)
+        
+    back_text = "🔙 Вернуться к сводке" if lang_code == "ru" else "🔙 Back to summary"
+    buttons.append([InlineKeyboardButton(text=back_text, callback_data="back_to_validation")])
+    
+    text = "\n".join(lines)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    
+    await callback.answer()
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+@router.callback_query(F.data == "back_to_validation", TranslationState.viewing_table)
+async def back_to_validation(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    data = await state.get_data()
+    extracted_data = data.get("extracted_data", {})
+    lang_name = data.get("lang_name", "выбранный")
+    lang_code = data.get("lang_code", "ru")
+    
+    await state.set_state(TranslationState.validating_data)
+    await callback.message.delete()
+    await send_validation_menu(callback.message, extracted_data, lang_name, lang_code)
+
+@router.callback_query(F.data.startswith("editt_"), TranslationState.viewing_table)
+async def process_edit_table_row(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.replace("editt_", "").rsplit("_", 1)
+    table_key = parts[0]
+    row_idx = int(parts[1])
+    
+    await state.update_data(editing_table_key=table_key, editing_row_idx=row_idx)
+    await state.set_state(TranslationState.editing_table_row)
+    
+    await callback.answer()
+    
+    data = await state.get_data()
+    extracted_data = data.get("extracted_data", {})
+    tables = extracted_data.get("tables", {})
+    row_data = tables.get(table_key, [])[row_idx]
+    
+    lang_code = data.get("lang_code", "ru")
+    localized_name = doc_manager.localize_field(table_key, lang_code)
+    
+    import json
+    json_text = json.dumps(row_data, ensure_ascii=False, indent=2)
+    
+    prompt = (
+        f"✏️ **Редактирование строки {row_idx + 1} в ({localized_name})**\n\n"
+        "Скопируйте JSON ниже, исправьте значения и отправьте обратно.\n"
+        "Для отмены отправьте /cancel\n\n"
+        f"```json\n{json_text}\n```"
+    ) if lang_code == "ru" else (
+        f"✏️ **Editing row {row_idx + 1} in ({localized_name})**\n\n"
+        "Copy JSON below, fix values and send back.\n"
+        "Send /cancel to abort\n\n"
+        f"```json\n{json_text}\n```"
+    )
+    
+    await callback.message.answer(prompt, parse_mode="Markdown")
+
+@router.message(TranslationState.editing_table_row)
+async def process_new_table_row_value(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    extracted_data = data.get("extracted_data", {})
+    lang_code = data.get("lang_code", "ru")
+
+    table_key = data.get("editing_table_key")
+    row_idx = data.get("editing_row_idx")
+    page = data.get("viewing_table_page", 0)
+
+    if message.text == "/cancel":
+        await state.set_state(TranslationState.viewing_table)
+        ok_msg = "Действие отменено." if lang_code == "ru" else "Action cancelled."
+        await message.reply(ok_msg)
+        return
+
+    import json
+    try:
+        new_row_data = json.loads(message.text)
+        
+        extracted_data["tables"][table_key][row_idx] = new_row_data
+        await state.update_data(extracted_data=extracted_data)
+        await state.set_state(TranslationState.viewing_table)
+        
+        ok_msg = "✅ Строка успешно обновлена!" if lang_code == "ru" else "✅ Row successfully updated!"
+        await message.reply(ok_msg)
+    except json.JSONDecodeError:
+        err_msg = "❌ Ошибка формата JSON. Пожалуйста, проверьте синтаксис и отправьте заново." if lang_code == "ru" else "❌ JSON format error. Please check syntax and send again."
+        await message.reply(err_msg)
 
 @router.callback_query(F.data == "confirm_generation", TranslationState.validating_data)
 async def confirm_generation(callback: CallbackQuery, state: FSMContext):
@@ -402,8 +666,18 @@ async def confirm_generation(callback: CallbackQuery, state: FSMContext):
         return
 
     try:
+        # Для новой схемы нужно объединить fields и таблицы в плоский словарь для docx_service
+        # (чтобы шаблоны, ожидающие {{given_name}} продолжали работать)
+        pass_data = {}
+        pass_data.update(extracted_data.get("fields", {}))
+        pass_data.update(extracted_data.get("tables", {}))
+        # На всякий случай сохраняем и плоские данные, если это старый формат
+        for k, v in extracted_data.items():
+            if k not in ["fields", "tables", "metadata"]:
+                pass_data[k] = v
+        
         # Вставляем данные в Word (I/O, в отдельном потоке)
-        await asyncio.to_thread(docx_service.generate_docx, extracted_data, template_path, output_path)
+        await asyncio.to_thread(docx_service.generate_docx, pass_data, template_path, output_path)
         
         # Отправляем готовый Word
         await processing_msg.edit_text("✅ Документ готов! Отправляю файл...")
