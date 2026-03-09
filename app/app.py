@@ -14,7 +14,6 @@ class App:
 
     def setup_services(self):
         logger.info("Setting up services...")
-        self.container.register("example_service", ExampleService())
         
         # Регистрируем наш сервис (если токена нет, кинет ValueError при первом использовании или сейчас)
         if settings.GEMINI_API_KEY:
