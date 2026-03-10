@@ -2,7 +2,6 @@ import asyncio
 import logging
 from app.config import settings
 from app.container import Container
-from app.services.example_service import ExampleService
 from app.services.gemini_service import GeminiTranslationService
 from app.services.docx_service import DocxService
 from app.services.file_manager_service import FileManagerService
@@ -15,7 +14,6 @@ class App:
 
     def setup_services(self):
         logger.info("Setting up services...")
-        self.container.register("example_service", ExampleService())
         
         # Регистрируем наш сервис (если токена нет, кинет ValueError при первом использовании или сейчас)
         if settings.GEMINI_API_KEY:

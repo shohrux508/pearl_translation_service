@@ -11,6 +11,10 @@
         "diploma_v2": {
             "name": "Приложение к диплому (Схема)",
             "emoji": "🎓"
+        },
+        "zagranpasport": {
+            "name": "Загранпаспорт",
+            "emoji": "🇺🇿"
         }
     },
     "configs": {
@@ -268,6 +272,101 @@
                                 "en": "Hours"
                             }
                         }
+                    }
+                }
+            }
+        },
+        "zagranpasport": {
+            "fields": {
+                "surname": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Фамилия",
+                        "en": "Surname"
+                    }
+                },
+                "name": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Имя",
+                        "en": "Name"
+                    }
+                },
+                "patronymic": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Отчество",
+                        "en": "Patronymic"
+                    }
+                },
+                "citizenship": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Гражданство",
+                        "en": "Citizenship"
+                    }
+                },
+                "date_of_birth": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Дата рождения",
+                        "en": "Date of birth"
+                    }
+                },
+                "place_of_birth": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Место рождения",
+                        "en": "Place of birth"
+                    }
+                },
+                "gender": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Пол",
+                        "en": "Gender"
+                    }
+                },
+                "date_of_issue": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Дата выдачи",
+                        "en": "Date of issue"
+                    }
+                },
+                "valid_until": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Действителен до",
+                        "en": "Valid until"
+                    }
+                },
+                "passport_series": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Серия паспорта",
+                        "en": "Passport series"
+                    }
+                },
+                "state_code": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Государственный код",
+                        "en": "State code"
+                    }
+                },
+                "type": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Тип",
+                        "en": "Type"
+                    }
+                },
+                "passport_cover": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Обложка паспорта",
+                        "en": "Passport cover"
                     }
                 }
             }

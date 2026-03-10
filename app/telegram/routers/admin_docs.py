@@ -187,14 +187,22 @@ async def process_en_template(message: types.Message, state: FSMContext):
         await message.reply("Пожалуйста, отправьте файл .docx или слово `skip`.")
         return
         
+    config = {"fields": {}}
+    for key, ru_val in data["ru_translations"].items():
+        config["fields"][key] = {
+            "type": "string",
+            "ui_mapping": {
+                "ru": ru_val,
+                "en": data["en_translations"].get(key, ru_val)
+            }
+        }
+
     # Сохраняем все данные в базу (JSON)
     doc_manager.add_document_type(
         doc_id=data["doc_id"],
         name=data["doc_name"],
         emoji=data["emoji"],
-        prompt_fields=data["prompt_fields"],
-        ru_translations=data["ru_translations"],
-        en_translations=data["en_translations"]
+        config=config
     )
     
     await state.clear()
