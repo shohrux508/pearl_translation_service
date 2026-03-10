@@ -133,3 +133,49 @@ class GeminiTranslationService:
             logger.error(f"Непредвиденная ошибка при обращении к Gemini (fields): {e}")
             raise e
 
+    async def analyze_document_for_template(self, image_path: Union[str, Path, list[Union[str, Path]]]) -> dict:
+        """
+        Анализирует изображение документа и автоматически генерирует для него структуру шаблона:
+        1. doc_name - понятное название документа.
+        2. fields - массив полей (keyword, ru_name, en_name).
+        """
+        prompt = (
+            "You are a document analyzer. Review the provided document images. "
+            "Determine the generic document name (e.g., 'Паспорт РФ', 'Свидетельство о рождении') and list all the fields that could be extracted from it. "
+            "Provide the response strictly as a JSON object with this shape: "
+            "{\n"
+            '  "doc_name": "Generic document name in Russian",\n'
+            '  "fields": [\n'
+            '    {"keyword": "snake_case_english_key", "ru_name": "Field name in Russian", "en_name": "Field name in English"}\n'
+            '  ]\n'
+            "}"
+        )
+        
+        try:
+            logger.info("Отправка документа в Gemini для анализа шаблона...")
+            contents = [prompt]
+            
+            if isinstance(image_path, list):
+                for p in image_path:
+                    contents.append(PIL.Image.open(p))
+            else:
+                contents.append(PIL.Image.open(image_path))
+                
+            response = await self.model.generate_content_async(
+                contents,
+                generation_config={"response_mime_type": "application/json"}
+            )
+            
+            data = json.loads(response.text)
+            logger.info("Успешно проанализирован шаблон документа (JSON).")
+            return data
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Ошибка при парсинге JSON от Gemini (analyze_document): {e}")
+            raise ValueError("Invalid JSON response from Gemini")
+        except Exception as e:
+            logger.error(f"Непредвиденная ошибка при обращении к Gemini (analyze_document): {e}")
+            raise e
+
+
+

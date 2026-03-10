@@ -4,10 +4,6 @@
             "name": "ID карта",
             "emoji": "🪪"
         },
-        "passport": {
-            "name": "Загранпаспорт",
-            "emoji": "🛂"
-        },
         "diploma_v2": {
             "name": "Приложение к диплому (Схема)",
             "emoji": "🎓"
@@ -15,6 +11,10 @@
         "zagranpasport": {
             "name": "Загранпаспорт",
             "emoji": "🇺🇿"
+        },
+        "svidetelstvo_o_rozhdenii": {
+            "name": "Свидетельство о рождении",
+            "emoji": "🤍"
         }
     },
     "configs": {
@@ -88,87 +88,6 @@
                     "ui_mapping": {
                         "ru": "МЕСТО ВЫДАЧИ",
                         "en": "Place of Issue"
-                    }
-                }
-            }
-        },
-        "passport": {
-            "fields": {
-                "type": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Тип документа",
-                        "en": "Type"
-                    }
-                },
-                "state_code": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Код государства",
-                        "en": "State Code"
-                    }
-                },
-                "passport_number": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Номер паспорта",
-                        "en": "Passport Number"
-                    }
-                },
-                "surname": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Фамилия",
-                        "en": "Surname"
-                    }
-                },
-                "given_name": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Имя",
-                        "en": "Given Name"
-                    }
-                },
-                "citizenship": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Гражданство",
-                        "en": "Citizenship"
-                    }
-                },
-                "date_of_birth": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Дата рождения",
-                        "en": "Date of Birth"
-                    }
-                },
-                "birth_place": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Место рождения",
-                        "en": "Place of Birth"
-                    }
-                },
-                "date_of_issue": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Дата выдачи",
-                        "en": "Date of Issue"
-                    }
-                },
-                "authority": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Орган выдачи",
-                        "en": "Authority"
-                    }
-                },
-                "date_of_expiry": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Срок действия",
-                        "en": "Date of Expiry"
                     }
                 }
             }
@@ -367,6 +286,213 @@
                     "ui_mapping": {
                         "ru": "Обложка паспорта",
                         "en": "Passport cover"
+                    }
+                }
+            }
+        },
+        "svidetelstvo_o_rozhdenii": {
+            "fields": {
+                "child_last_name": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Фамилия ребенка",
+                        "en": "Child's last name"
+                    }
+                },
+                "child_first_name": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Имя ребенка",
+                        "en": "Child's first name"
+                    }
+                },
+                "child_patronymic": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Отчество ребенка",
+                        "en": "Child's patronymic"
+                    }
+                },
+                "child_birth_date_year": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Год рождения ребенка",
+                        "en": "Child's birth year"
+                    }
+                },
+                "child_birth_date_month": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Месяц рождения ребенка",
+                        "en": "Child's birth month"
+                    }
+                },
+                "child_birth_date_day": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "День рождения ребенка",
+                        "en": "Child's birth day"
+                    }
+                },
+                "child_birth_date_text": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Дата рождения ребенка прописью",
+                        "en": "Child's birth date (text)"
+                    }
+                },
+                "child_birth_country": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Страна рождения ребенка",
+                        "en": "Child's birth country"
+                    }
+                },
+                "child_birth_region": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Область рождения ребенка",
+                        "en": "Child's birth region"
+                    }
+                },
+                "child_birth_city": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Город рождения ребенка",
+                        "en": "Child's birth city"
+                    }
+                },
+                "father_last_name": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Фамилия отца",
+                        "en": "Father's last name"
+                    }
+                },
+                "father_first_name_patronymic": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Имя и отчество отца",
+                        "en": "Father's first name and patronymic"
+                    }
+                },
+                "father_nationality": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Национальность отца",
+                        "en": "Father's nationality"
+                    }
+                },
+                "father_citizenship": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Гражданство отца",
+                        "en": "Father's citizenship"
+                    }
+                },
+                "mother_last_name": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Фамилия матери",
+                        "en": "Mother's last name"
+                    }
+                },
+                "mother_first_name_patronymic": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Имя и отчество матери",
+                        "en": "Mother's first name and patronymic"
+                    }
+                },
+                "mother_nationality": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Национальность матери",
+                        "en": "Mother's nationality"
+                    }
+                },
+                "mother_citizenship": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Гражданство матери",
+                        "en": "Mother's citizenship"
+                    }
+                },
+                "issuing_authority": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Орган, выдавший документ",
+                        "en": "Issuing authority"
+                    }
+                },
+                "document_issue_date_year": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Год выдачи документа",
+                        "en": "Document issue year"
+                    }
+                },
+                "document_issue_date_month": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Месяц выдачи документа",
+                        "en": "Document issue month"
+                    }
+                },
+                "document_issue_date_day": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "День выдачи документа",
+                        "en": "Document issue day"
+                    }
+                },
+                "head_of_civil_registry": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Руководитель органа ЗАГС",
+                        "en": "Head of Civil Registry Office"
+                    }
+                },
+                "record_date_year": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Год записи акта",
+                        "en": "Act record year"
+                    }
+                },
+                "record_date_month": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Месяц записи акта",
+                        "en": "Act record month"
+                    }
+                },
+                "record_date_day": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "День записи акта",
+                        "en": "Act record day"
+                    }
+                },
+                "record_number": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Номер записи акта",
+                        "en": "Act record number"
+                    }
+                },
+                "document_series": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Серия документа",
+                        "en": "Document series"
+                    }
+                },
+                "document_number": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Номер документа",
+                        "en": "Document number"
                     }
                 }
             }

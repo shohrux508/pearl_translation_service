@@ -4,6 +4,7 @@ from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from app.container import Container
 from app.services.document_manager import doc_manager
 
@@ -34,45 +35,282 @@ def generate_doc_id(name: str) -> str:
     return id_str
 
 class AddDocState(StatesGroup):
-    waiting_for_name = State()
+    waiting_for_photos = State()
+    waiting_for_field_edit_choice = State()
+    editing_fields_raw = State()
     waiting_for_emoji = State()
-    waiting_for_fields = State()
     waiting_for_ru_template = State()
     waiting_for_en_template = State()
 
 gemini_service = None
+file_manager = None
 
 def setup_router(container: Container):
-    global gemini_service
+    global gemini_service, file_manager
     try:
         gemini_service = container.get("gemini_service")
+        file_manager = container.get("file_manager")
     except ValueError:
         pass
 
-@router.message(Command("add_doc"))
+@router.message(F.text == "➕ Добавить шаблон")
 async def cmd_add_doc(message: types.Message, state: FSMContext):
     """
-    Начинает процесс добавления нового типа документа.
+    Начинает процесс добавления нового шаблона.
     """
     await message.reply(
-        "🛠 **Добавление нового типа документа**\n\n"
-        "Шаг 1. Введите понятное название документа (например: `Свидетельство о браке`):",
+        "🛠 **Добавление нового шаблона**\n\n"
+        "Шаг 1. Сфотографируйте документ, из которого мы будем делать шаблон.\n"
+        "Я автоматически определю его тип, извлеку все нужные поля, переведу их и сгенерирую ключи.\n"
+        "Вы можете отправить несколько страниц.\n\n"
+        "📸 Пожалуйста, отправьте фото документа:",
         parse_mode="Markdown"
     )
-    await state.set_state(AddDocState.waiting_for_name)
+    await state.update_data(file_ids=[])
+    await state.set_state(AddDocState.waiting_for_photos)
 
-@router.message(AddDocState.waiting_for_name)
-async def process_doc_name(message: types.Message, state: FSMContext):
-    doc_name = message.text.strip()
-    doc_id = generate_doc_id(doc_name)
-    await state.update_data(doc_name=doc_name, doc_id=doc_id)
+@router.message(F.photo, AddDocState.waiting_for_photos)
+async def handle_document_photo(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    file_ids = data.get("file_ids", [])
     
-    await message.reply(
-        f"✅ Название `{doc_name}` принято (ID документа сгенерирован: `{doc_id}`).\n\n"
+    photo = message.photo[-1]
+    file_ids.append(photo.file_id)
+    await state.update_data(file_ids=file_ids)
+    
+    total_pages = len(file_ids)
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Завершить и анализировать", callback_data="admin_analyze_template")]
+    ])
+    
+    text = f"📄 Загружено страниц: **{total_pages}**\nОтправьте еще фото, либо нажмите кнопку ниже для запуска анализа:"
+    
+    last_msg_id = data.get("last_tracking_msg_id")
+    if last_msg_id:
+        try:
+            await message.bot.edit_message_text(chat_id=message.chat.id, message_id=last_msg_id, text=text, reply_markup=keyboard, parse_mode="Markdown")
+        except Exception:
+            msg = await message.reply(text, reply_markup=keyboard, parse_mode="Markdown")
+            await state.update_data(last_tracking_msg_id=msg.message_id)
+    else:
+        msg = await message.reply(text, reply_markup=keyboard, parse_mode="Markdown")
+        await state.update_data(last_tracking_msg_id=msg.message_id)
+
+@router.callback_query(F.data == "admin_analyze_template", AddDocState.waiting_for_photos)
+async def analyze_template(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    data = await state.get_data()
+    file_ids = data.get("file_ids", [])
+    
+    if not file_ids:
+        await callback.message.answer("❌ Ошибка: фото не найдены. Отправьте фото заново.")
+        return
+        
+    processing_msg = await callback.message.edit_text("⏳ Анализирую структуру документа. Это может занять секунд 10-15...")
+    
+    if not gemini_service or not file_manager:
+        await processing_msg.edit_text("❌ Ошибка: Сервисы не настроены. Обратитесь к администратору.")
+        return
+        
+    photo_paths = []
+    try:
+        photo_paths = await file_manager.download_photos(callback.bot, callback.from_user.id, file_ids)
+        result = await gemini_service.analyze_document_for_template(photo_paths)
+        
+        doc_name = result.get("doc_name", "Новый документ")
+        doc_id = generate_doc_id(doc_name)
+        
+        prompt_fields_list = []
+        ru_translations = {}
+        en_translations = {}
+        
+        fields = result.get("fields", [])
+        for field in fields:
+            key = field.get("keyword")
+            if key:
+                prompt_fields_list.append(key)
+                ru_translations[key] = field.get("ru_name", key)
+                en_translations[key] = field.get("en_name", key)
+                
+        prompt_fields_str = ", ".join(prompt_fields_list)
+        
+        await state.update_data(
+            doc_name=doc_name,
+            doc_id=doc_id,
+            prompt_fields=prompt_fields_str,
+            ru_translations=ru_translations,
+            en_translations=en_translations
+        )
+        
+        result_text_intro = f"✅ Авто-определение успешно!\n\n📄 **Название:** `{doc_name}` (ID: `{doc_id}`)\n📋 **Найдено полей ({len(prompt_fields_list)}):**\n\n"
+        
+        # Разделяем длинный список на несколько сообщений (длина сообщения в Telegram ~4096 символов)
+        MAX_MESSAGE_LENGTH = 3800
+        current_message_text = result_text_intro
+        messages_to_send = []
+        
+        for key in prompt_fields_list:
+            line = f"• `{key}`\n"
+            if len(current_message_text) + len(line) > MAX_MESSAGE_LENGTH:
+                messages_to_send.append(current_message_text)
+                current_message_text = ""
+            current_message_text += line
+            
+        current_message_text += "\nВсе ли поля определены верно?"
+        messages_to_send.append(current_message_text)
+        
+        # Отправляем первое сообщение редактированием
+        await processing_msg.edit_text(messages_to_send[0], parse_mode="Markdown")
+        
+        # Отправляем остальные части отдельными сообщениями, если список был очень большой
+        for i, m in enumerate(messages_to_send[1:]):
+            if i == len(messages_to_send[1:]) - 1:
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ Всё верно, продолжить", callback_data="admin_confirm_fields")],
+                    [InlineKeyboardButton(text="✏️ Поправить поля", callback_data="admin_edit_fields")]
+                ])
+                await callback.message.answer(m, reply_markup=keyboard, parse_mode="Markdown")
+            else:
+                await callback.message.answer(m, parse_mode="Markdown")
+             
+        if len(messages_to_send) == 1:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Всё верно, продолжить", callback_data="admin_confirm_fields")],
+                [InlineKeyboardButton(text="✏️ Поправить поля", callback_data="admin_edit_fields")]
+            ])
+            await processing_msg.edit_reply_markup(reply_markup=keyboard)
+             
+        await state.set_state(AddDocState.waiting_for_field_edit_choice)
+        
+    except Exception as e:
+        await processing_msg.edit_text(f"❌ Произошла ошибка при анализе ИИ:\n{str(e)}\n\nПопробуйте отправить другие, более четкие фото или добавьте шаблон заново.")
+    finally:
+        if file_manager and photo_paths:
+            file_manager.cleanup_files(photo_paths)
+
+@router.callback_query(F.data == "admin_confirm_fields", AddDocState.waiting_for_field_edit_choice)
+async def confirm_fields(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await callback.message.edit_reply_markup(reply_markup=None)
+    
+    await callback.message.answer(
         "Шаг 2. Отправьте 1 эмодзи для кнопки (например: 💍 или 📄):",
         parse_mode="Markdown"
     )
     await state.set_state(AddDocState.waiting_for_emoji)
+
+@router.callback_query(F.data == "admin_edit_fields", AddDocState.waiting_for_field_edit_choice)
+async def edit_fields(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    data = await state.get_data()
+    
+    prompt_fields_list = data.get("prompt_fields", "").split(", ")
+    ru_translations = data.get("ru_translations", {})
+    
+    lines = []
+    for key in prompt_fields_list:
+        if key.strip():
+            ru_name = ru_translations.get(key, key)
+            lines.append(f"{key}: {ru_name}")
+            
+    text_to_edit = "\n".join(lines)
+    
+    msg = (
+        "✏️ **Редактирование полей**\n\n"
+        "Скопируйте текст ниже, удалите лишние строки, поменяйте названия или добавьте новые с новой строки "
+        "(ключи для новых генерировать не нужно, просто напишите русское название).\n"
+        "Затем отправьте исправленный текст мне обратно.\n\n"
+        f"```text\n{text_to_edit}\n```"
+    )
+    
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(msg, parse_mode="Markdown")
+    await state.set_state(AddDocState.editing_fields_raw)
+
+@router.message(AddDocState.editing_fields_raw)
+async def process_edited_fields(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    ru_translations = data.get("ru_translations", {})
+    en_translations = data.get("en_translations", {})
+    
+    lines = message.text.strip().split("\n")
+    
+    new_prompt_fields_list = []
+    new_ru_translations = {}
+    new_en_translations = {}
+    
+    fields_to_generate = []
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        if ":" in line:
+            parts = line.split(":", 1)
+            key = parts[0].strip()
+            ru_name = parts[1].strip()
+            new_prompt_fields_list.append(key)
+            new_ru_translations[key] = ru_name
+            # Keep old english translation if exists
+            new_en_translations[key] = en_translations.get(key, key)
+        else:
+            # Just a russian name, needs generation
+            fields_to_generate.append(line)
+            
+    if fields_to_generate:
+        processing_msg = await message.reply("⏳ Генерирую ключи для новых полей...")
+        try:
+            generated_fields = await gemini_service.generate_field_translations(fields_to_generate)
+            for item in generated_fields:
+                if isinstance(item, dict) and "keyword" in item and "ru_name" in item and "en_name" in item:
+                    key = item["keyword"]
+                    new_prompt_fields_list.append(key)
+                    new_ru_translations[key] = item["ru_name"]
+                    new_en_translations[key] = item["en_name"]
+            await processing_msg.delete()
+        except Exception as e:
+            await processing_msg.edit_text(f"❌ Ошибка генерации новых полей: {e}")
+            return
+            
+    prompt_fields_str = ", ".join(new_prompt_fields_list)
+    await state.update_data(
+        prompt_fields=prompt_fields_str,
+        ru_translations=new_ru_translations,
+        en_translations=new_en_translations
+    )
+    
+    # Show updated list
+    doc_name = data.get("doc_name")
+    doc_id = data.get("doc_id")
+    result_text_intro = f"✅ Список полей обновлен!\n\n📄 **Название:** `{doc_name}` (ID: `{doc_id}`)\n📋 **Итого полей ({len(new_prompt_fields_list)}):**\n\n"
+    
+    MAX_MESSAGE_LENGTH = 3800
+    current_message_text = result_text_intro
+    messages_to_send = []
+    
+    for key in new_prompt_fields_list:
+        line = f"• `{key}` (RU: {new_ru_translations[key]})\n"
+        if len(current_message_text) + len(line) > MAX_MESSAGE_LENGTH:
+            messages_to_send.append(current_message_text)
+            current_message_text = ""
+        current_message_text += line
+        
+    current_message_text += "\nВсе ли поля теперь верны?"
+    messages_to_send.append(current_message_text)
+    
+    for i, m in enumerate(messages_to_send):
+        if i == len(messages_to_send) - 1:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Всё верно, продолжить", callback_data="admin_confirm_fields")],
+                [InlineKeyboardButton(text="✏️ Поправить поля", callback_data="admin_edit_fields")]
+            ])
+            await message.answer(m, reply_markup=keyboard, parse_mode="Markdown")
+        else:
+            await message.answer(m, parse_mode="Markdown")
+            
+    await state.set_state(AddDocState.waiting_for_field_edit_choice)
 
 @router.message(AddDocState.waiting_for_emoji)
 async def process_doc_emoji(message: types.Message, state: FSMContext):
@@ -81,71 +319,11 @@ async def process_doc_emoji(message: types.Message, state: FSMContext):
     
     await message.reply(
         f"✅ Эмодзи {emoji} принят.\n\n"
-        "Шаг 3. Укажите поля для извлечения **на русском языке**.\n"
-        "Каждое поле с новой строки. Я сам сгенерирую для них ключи и перевод на английский.\n\n"
-        "Пример:\n"
-        "`ФИО Мужа`\n"
-        "`ФИО Жены`\n"
-        "`Дата регистрации`",
+        "Шаг 3. Отправьте готовый шаблон перевода для **РУССКОГО** языка (файл `.docx`).\n"
+        "(Или отправьте слово `skip` чтобы пропустить и создать пустой шаблон).",
         parse_mode="Markdown"
     )
-    await state.set_state(AddDocState.waiting_for_fields)
-
-@router.message(AddDocState.waiting_for_fields)
-async def process_doc_fields(message: types.Message, state: FSMContext):
-    if not gemini_service:
-        await message.reply("❌ Ошибка: Сервис Gemini не настроен. Обратитесь к администратору или проверьте API_KEY.")
-        return
-
-    lines = message.text.strip().split("\n")
-    ru_fields = [line.strip() for line in lines if line.strip()]
-
-    if not ru_fields:
-        await message.reply("Вы не ввели ни одного поля. Пожалуйста, попробуйте еще раз.")
-        return
-
-    msg = await message.reply("⏳ Генерирую ключи и переводы с помощью ИИ. Пожалуйста, подождите...")
-
-    try:
-        generated_fields = await gemini_service.generate_field_translations(ru_fields)
-        
-        prompt_fields_list = []
-        ru_translations = {}
-        en_translations = {}
-        
-        for item in generated_fields:
-            if isinstance(item, dict) and "keyword" in item and "ru_name" in item and "en_name" in item:
-                key = item["keyword"]
-                prompt_fields_list.append(key)
-                ru_translations[key] = item["ru_name"]
-                en_translations[key] = item["en_name"]
-            else:
-                raise ValueError("Неверный формат ответа от Gemini: отсутствуют нужные ключи.")
-
-        prompt_fields_str = ", ".join(prompt_fields_list)
-        
-        await state.update_data(
-            prompt_fields=prompt_fields_str,
-            ru_translations=ru_translations,
-            en_translations=en_translations
-        )
-        
-        result_text = f"✅ Поля успешно обработаны ({len(prompt_fields_list)} шт):\n\n"
-        for key in prompt_fields_list:
-            result_text += f"• `{key}`: {ru_translations[key]} ➡️ {en_translations[key]}\n"
-            
-        result_text += (
-            "\nШаг 4. Отправьте готовый шаблон перевода для **РУССКОГО** языка (файл `.docx`).\n"
-            "(Или отправьте слово `skip` чтобы пропустить и создать пустой шаблон)."
-        )
-        
-        await msg.delete()
-        await message.reply(result_text, parse_mode="Markdown")
-        await state.set_state(AddDocState.waiting_for_ru_template)
-        
-    except Exception as e:
-        await msg.delete()
-        await message.reply(f"❌ Ошибка генерации полей через ИИ.\nПопробуйте написать еще раз.\nОшибка: {e}")
+    await state.set_state(AddDocState.waiting_for_ru_template)
 
 @router.message(AddDocState.waiting_for_ru_template, F.document | F.text)
 async def process_ru_template(message: types.Message, state: FSMContext):
@@ -165,7 +343,7 @@ async def process_ru_template(message: types.Message, state: FSMContext):
         return
 
     await message.reply(
-        "Шаг 5. Теперь отправьте шаблон перевода для **АНГЛИЙСКОГО** языка (файл `.docx`).\n"
+        "Шаг 4. Теперь отправьте шаблон перевода для **АНГЛИЙСКОГО** языка (файл `.docx`).\n"
         "(Или отправьте слово `skip` чтобы пропустить).",
         parse_mode="Markdown"
     )
@@ -212,7 +390,7 @@ async def process_en_template(message: types.Message, state: FSMContext):
     
     await message.reply(
         f"🎉 **Готово!**\n\n"
-        f"Новый документ `{data['doc_name']}` успешно добавлен в систему.\n"
+        f"Новый шаблон `{data['doc_name']}` успешно добавлен в систему.\n"
         f"Вы можете проверить его, отправив фотографию в бот!",
         parse_mode="Markdown"
     )

@@ -15,10 +15,10 @@ class ManageDocState(StatesGroup):
 def setup_router(container: Container):
     pass
 
-@router.message(Command("manage_docs"))
+@router.message(F.text == "🗂 Мои шаблоны")
 async def cmd_manage_docs(message: types.Message, state: FSMContext):
     """
-    Открывает панель управления документами.
+    Открывает панель управления шаблонами.
     """
     await state.clear()
     await send_docs_list(message)
@@ -36,7 +36,7 @@ async def send_docs_list(message: types.Message | types.CallbackQuery, edit_mess
         ])
         
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    text = "📂 **Панель управления документами**\nВыберите документ для просмотра, редактирования или удаления:"
+    text = "📂 **Мои шаблоны**\nВыберите шаблон для просмотра, редактирования или удаления:"
     
     if edit_message:
         await message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -56,7 +56,7 @@ async def show_doc_details(callback: CallbackQuery, state: FSMContext):
     doc_id = callback.data.replace("mgmt_doc_", "")
     doc_types = doc_manager.get_types()
     if doc_id not in doc_types:
-        await callback.answer("❌ Документ не найден!", show_alert=True)
+        await callback.answer("❌ Шаблон не найден!", show_alert=True)
         return
         
     doc_info = doc_types[doc_id]
@@ -68,7 +68,7 @@ async def show_doc_details(callback: CallbackQuery, state: FSMContext):
     fields = config_data.get("prompt_fields", "Нет полей").replace("\n", ", ")
     
     text = (
-        f"📄 **Документ:** {doc_info['name']}\n"
+        f"📄 **Шаблон:** {doc_info['name']}\n"
         f"🆔 **Внутренний ID:** `{doc_id}`\n"
         f"😊 **Эмодзи:** {doc_info['emoji']}\n\n"
         f"📋 **Поля для извлечения:**\n`{fields}`"
@@ -76,8 +76,7 @@ async def show_doc_details(callback: CallbackQuery, state: FSMContext):
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Изменить название", callback_data=f"mgmt_edit_name_{doc_id}")],
-        [InlineKeyboardButton(text="✏️ Изменить эмодзи", callback_data=f"mgmt_edit_emoji_{doc_id}")],
-        [InlineKeyboardButton(text="❌ Удалить документ", callback_data=f"mgmt_delete_{doc_id}")],
+        [InlineKeyboardButton(text="❌ Удалить шаблон", callback_data=f"mgmt_delete_{doc_id}")],
         [InlineKeyboardButton(text="🔙 Назад к списку", callback_data="mgmt_back_to_list")]
     ])
     
@@ -88,7 +87,7 @@ async def delete_doc_confirm(callback: CallbackQuery):
     doc_id = callback.data.replace("mgmt_delete_", "")
     doc_manager.delete_document_type(doc_id)
     
-    await callback.answer("✅ Документ успешно удален!", show_alert=True)
+    await callback.answer("✅ Шаблон успешно удален!", show_alert=True)
     await send_docs_list(callback.message, edit_message=True)
 
 @router.callback_query(F.data.startswith("mgmt_edit_name_"))
@@ -101,7 +100,7 @@ async def edit_doc_name(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="❌ Отмена", callback_data=f"mgmt_doc_{doc_id}")]
     ])
     
-    await callback.message.edit_text("✏️ Отправьте новое название для этого документа:", reply_markup=keyboard)
+    await callback.message.edit_text("✏️ Отправьте новое название для этого шаблона:", reply_markup=keyboard)
 
 @router.message(ManageDocState.editing_name)
 async def save_doc_name(message: types.Message, state: FSMContext):
@@ -115,26 +114,3 @@ async def save_doc_name(message: types.Message, state: FSMContext):
     await message.reply(f"✅ Название для `{doc_id}` успешно изменено на **{new_name}**.", parse_mode="Markdown")
     await send_docs_list(message)
 
-@router.callback_query(F.data.startswith("mgmt_edit_emoji_"))
-async def edit_doc_emoji(callback: CallbackQuery, state: FSMContext):
-    doc_id = callback.data.replace("mgmt_edit_emoji_", "")
-    await state.update_data(current_mgmt_doc=doc_id)
-    await state.set_state(ManageDocState.editing_emoji)
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Отмена", callback_data=f"mgmt_doc_{doc_id}")]
-    ])
-    
-    await callback.message.edit_text("✏️ Отправьте новый эмодзи для этого документа:", reply_markup=keyboard)
-
-@router.message(ManageDocState.editing_emoji)
-async def save_doc_emoji(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    doc_id = data.get("current_mgmt_doc")
-    new_emoji = message.text.strip()
-    
-    doc_manager.update_document_info(doc_id, emoji=new_emoji)
-    await state.clear()
-    
-    await message.reply(f"✅ Эмодзи успешно изменен на {new_emoji}.")
-    await send_docs_list(message)

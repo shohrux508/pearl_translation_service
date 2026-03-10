@@ -73,27 +73,24 @@ async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📄 Перевести документ"), KeyboardButton(text="📁 Мои последние документы")],
-            [KeyboardButton(text="❓ Как это работает"), KeyboardButton(text="🌐 Выбрать язык")]
+            [KeyboardButton(text="📄 Перевод документа")],
+            [KeyboardButton(text="🗂 Мои шаблоны"), KeyboardButton(text="➕ Добавить шаблон")],
+            [KeyboardButton(text="❓ Как это работает?")]
         ],
         resize_keyboard=True,
         input_field_placeholder="Выберите действие ниже"
     )
     await message.answer(START_GREETING, reply_markup=keyboard, parse_mode="Markdown")
 
-@router.message(F.text == "📄 Перевести документ")
+@router.message(F.text == "📄 Перевод документа")
 async def menu_translate(message: types.Message, state: FSMContext):
     await state.clear()
     await state.set_state(TranslationState.waiting_for_photos)
     await message.answer(PHOTO_INSTRUCTION_TEXT, reply_markup=ReplyKeyboardRemove(), parse_mode="Markdown")
 
-@router.message(F.text == "❓ Как это работает")
+@router.message(F.text == "❓ Как это работает?")
 async def menu_help(message: types.Message):
     await message.answer(HELP_TEXT, parse_mode="Markdown")
-
-@router.message(F.text.in_({"📁 Мои последние документы", "🌐 Выбрать язык"}))
-async def menu_stub(message: types.Message):
-    await message.answer("⏳ Эта функция находится в разработке", show_alert=True)
 
 @router.callback_query(F.data == "retry_photo")
 async def retry_photo_callback(callback: CallbackQuery, state: FSMContext):
@@ -361,15 +358,10 @@ async def send_validation_menu(message: types.Message, data_dict: dict, lang_nam
         fields = data_dict.get("fields", {})
         tables = data_dict.get("tables", {})
         
-        # Show key fields for summary (limit to 3-5 fields)
-        lines.append("📌 **Общие сведения:**" if lang_code == "ru" else "📌 **General Information:**")
-        count = 0
+        lines.append("📌 **Все извлеченные данные:**" if lang_code == "ru" else "📌 **All extracted data:**")
         for k, v in fields.items():
-            if count >= 4:
-                break
             localized_name = doc_manager.localize_field(k, lang_code)
             lines.append(f"▪️ **{localized_name}**: `{v}`")
-            count += 1
             
         # Summary for tables
         for tk, tv in tables.items():
