@@ -4,7 +4,30 @@ from typing import Dict, Any, Union
 from docx import Document
 from docxtpl import DocxTemplate
 
+import re
 logger = logging.getLogger(__name__)
+
+def _sanitize_for_xml(text: str) -> str:
+    """Удаляет control-символы, которые ломают XML в MS Word."""
+    if not isinstance(text, str):
+        return text
+    # Удаляем 0x00-0x08, 0x0B-0x0C, 0x0E-0x1F, 0x7F-0x9F
+    cleaned = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+    # Заменяем обычные переносы строк на пробелы, так как они могут
+    # вызывать неопознанную ошибку парсинга внутри тегов <w:t> в Word
+    cleaned = cleaned.replace('\r\n', ' ').replace('\n', ' ')
+    return cleaned
+
+def _sanitize_data(data: Any) -> Any:
+    if isinstance(data, dict):
+        return {k: _sanitize_data(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [_sanitize_data(v) for v in data]
+    elif isinstance(data, str):
+        return _sanitize_for_xml(data)
+    elif data is None:
+        return ""
+    return data
 
 class DocxService:
     """
@@ -37,7 +60,11 @@ class DocxService:
         """
         logger.info(f"Открытие шаблона {template_path} для вставки данных...")
         doc = DocxTemplate(template_path)
-        doc.render(data)
+        
+        # Санитизируем данные: Word очень строг к непечатаемым символам в XML
+        safe_data = _sanitize_data(data)
+        
+        doc.render(safe_data)
         doc.save(output_path)
         logger.info(f"Документ успешно сохранен: {output_path}")
         return output_path

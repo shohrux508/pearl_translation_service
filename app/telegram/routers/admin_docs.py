@@ -38,6 +38,7 @@ class AddDocState(StatesGroup):
     waiting_for_photos = State()
     waiting_for_field_edit_choice = State()
     editing_fields_raw = State()
+    waiting_for_new_title = State()
     waiting_for_emoji = State()
     waiting_for_ru_template = State()
     waiting_for_en_template = State()
@@ -168,7 +169,8 @@ async def analyze_template(callback: CallbackQuery, state: FSMContext):
             if i == len(messages_to_send[1:]) - 1:
                 keyboard = InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="✅ Всё верно, продолжить", callback_data="admin_confirm_fields")],
-                    [InlineKeyboardButton(text="✏️ Поправить поля", callback_data="admin_edit_fields")]
+                    [InlineKeyboardButton(text="✏️ Поправить поля", callback_data="admin_edit_fields")],
+                    [InlineKeyboardButton(text="🏷 Изменить название", callback_data="admin_edit_title")]
                 ])
                 await callback.message.answer(m, reply_markup=keyboard, parse_mode="Markdown")
             else:
@@ -177,7 +179,8 @@ async def analyze_template(callback: CallbackQuery, state: FSMContext):
         if len(messages_to_send) == 1:
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="✅ Всё верно, продолжить", callback_data="admin_confirm_fields")],
-                [InlineKeyboardButton(text="✏️ Поправить поля", callback_data="admin_edit_fields")]
+                [InlineKeyboardButton(text="✏️ Поправить поля", callback_data="admin_edit_fields")],
+                [InlineKeyboardButton(text="🏷 Изменить название", callback_data="admin_edit_title")]
             ])
             await processing_msg.edit_reply_markup(reply_markup=keyboard)
              
@@ -227,6 +230,65 @@ async def edit_fields(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(msg, parse_mode="Markdown")
     await state.set_state(AddDocState.editing_fields_raw)
+
+@router.callback_query(F.data == "admin_edit_title", AddDocState.waiting_for_field_edit_choice)
+async def edit_title(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    data = await state.get_data()
+    doc_name = data.get("doc_name")
+    
+    msg = (
+        f"🏷 **Изменение названия**\n\n"
+        f"Текущее название: `{doc_name}`\n"
+        "Отправьте новое название для этого шаблона ответным сообщением."
+    )
+    
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(msg, parse_mode="Markdown")
+    await state.set_state(AddDocState.waiting_for_new_title)
+
+@router.message(AddDocState.waiting_for_new_title, F.text)
+async def process_new_title(message: types.Message, state: FSMContext):
+    new_title = message.text.strip()
+    await state.update_data(doc_name=new_title, doc_id=generate_doc_id(new_title))
+    
+    data = await state.get_data()
+    prompt_fields_str = data.get("prompt_fields", "")
+    prompt_fields_list = prompt_fields_str.split(", ") if prompt_fields_str else []
+    ru_translations = data.get("ru_translations", {})
+    doc_id = data.get("doc_id")
+    
+    result_text_intro = f"✅ Название обновлено!\n\n📄 **Название:** `{new_title}` (ID: `{doc_id}`)\n📋 **Итого полей ({len(prompt_fields_list)}):**\n\n"
+    
+    MAX_MESSAGE_LENGTH = 3800
+    current_message_text = result_text_intro
+    messages_to_send = []
+    
+    for key in prompt_fields_list:
+        if not key.strip():
+            continue
+        ru_name = ru_translations.get(key, key)
+        line = f"• `{key}` (RU: {ru_name})\n"
+        if len(current_message_text) + len(line) > MAX_MESSAGE_LENGTH:
+            messages_to_send.append(current_message_text)
+            current_message_text = ""
+        current_message_text += line
+        
+    current_message_text += "\nВсё ли теперь верно?"
+    messages_to_send.append(current_message_text)
+    
+    for i, m in enumerate(messages_to_send):
+        if i == len(messages_to_send) - 1:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ Всё верно, продолжить", callback_data="admin_confirm_fields")],
+                [InlineKeyboardButton(text="✏️ Поправить поля", callback_data="admin_edit_fields")],
+                [InlineKeyboardButton(text="🏷 Изменить название", callback_data="admin_edit_title")]
+            ])
+            await message.answer(m, reply_markup=keyboard, parse_mode="Markdown")
+        else:
+            await message.answer(m, parse_mode="Markdown")
+            
+    await state.set_state(AddDocState.waiting_for_field_edit_choice)
 
 @router.message(AddDocState.editing_fields_raw)
 async def process_edited_fields(message: types.Message, state: FSMContext):
@@ -304,7 +366,8 @@ async def process_edited_fields(message: types.Message, state: FSMContext):
         if i == len(messages_to_send) - 1:
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="✅ Всё верно, продолжить", callback_data="admin_confirm_fields")],
-                [InlineKeyboardButton(text="✏️ Поправить поля", callback_data="admin_edit_fields")]
+                [InlineKeyboardButton(text="✏️ Поправить поля", callback_data="admin_edit_fields")],
+                [InlineKeyboardButton(text="🏷 Изменить название", callback_data="admin_edit_title")]
             ])
             await message.answer(m, reply_markup=keyboard, parse_mode="Markdown")
         else:

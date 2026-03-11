@@ -15,6 +15,10 @@
         "svidetelstvo_o_rozhdenii": {
             "name": "Свидетельство о рождении",
             "emoji": "🤍"
+        },
+        "pasport_respubliki_uzbekistan": {
+            "name": "Паспорт Республики Узбекистан",
+            "emoji": "🇺🇿"
         }
     },
     "configs": {
@@ -493,6 +497,108 @@
                     "ui_mapping": {
                         "ru": "Номер документа",
                         "en": "Document number"
+                    }
+                }
+            }
+        },
+        "pasport_respubliki_uzbekistan": {
+            "fields": {
+                "passport_number": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Номер паспорта",
+                        "en": "Passport number"
+                    }
+                },
+                "document_type": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Тип документа",
+                        "en": "Document type"
+                    }
+                },
+                "country_code": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Код страны",
+                        "en": "Country code"
+                    }
+                },
+                "surname": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Фамилия",
+                        "en": "Surname"
+                    }
+                },
+                "given_names": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Имя",
+                        "en": "Given names"
+                    }
+                },
+                "father_name": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Имя отца",
+                        "en": "Father's name"
+                    }
+                },
+                "citizenship": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Гражданство",
+                        "en": "citizenship"
+                    }
+                },
+                "date_of_birth": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Дата рождения",
+                        "en": "Date of birth"
+                    }
+                },
+                "sex": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Пол",
+                        "en": "Sex"
+                    }
+                },
+                "place_of_birth": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Место рождения",
+                        "en": "Place of birth"
+                    }
+                },
+                "date_of_issue": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Дата выдачи",
+                        "en": "Date of issue"
+                    }
+                },
+                "date_of_expiry": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Дата окончания срока действия",
+                        "en": "Date of expiry"
+                    }
+                },
+                "issuing_authority": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Орган, выдавший документ",
+                        "en": "Issuing authority"
+                    }
+                },
+                "mrz": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Машиносчитываемая зона",
+                        "en": "Machine Readable Zone"
                     }
                 }
             }
