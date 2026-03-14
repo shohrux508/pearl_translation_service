@@ -14,7 +14,7 @@ class GeminiTranslationService:
     - Извлечение данных в формате JSON
     """
     
-    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash", pro_model_name: str = "gemini-2.5-pro-preview"):
         """
         Инициализация сервиса Gemini.
         """
@@ -23,6 +23,7 @@ class GeminiTranslationService:
             
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel(model_name)
+        self.pro_model = genai.GenerativeModel(pro_model_name)
         
         # Дефолтный промпт, чтобы не прокидывать его каждый раз
         self.default_prompt = (
@@ -37,10 +38,12 @@ class GeminiTranslationService:
         image_path: Union[str, Path, list[Union[str, Path]]] = None, 
         prompt: str = None,
         json_schema: Dict[str, Any] = None,
-        test_json_response: Dict[str, Any] = None
+        test_json_response: Dict[str, Any] = None,
+        use_pro: bool = False
     ) -> Dict[str, Any]:
         """
         Отправляет одно или несколько изображений в Gemini и извлекает данные в JSON.
+        Если use_pro=True, используется усиленная модель.
         """
         if test_json_response is not None:
             logger.info("Использован тестовый JSON ответ, вызов к API пропущен.")
@@ -71,8 +74,10 @@ class GeminiTranslationService:
                 logger.info(f"Отправка изображения {image_path} в Gemini для анализа...")
                 contents.append(PIL.Image.open(image_path))
             
+            active_model = self.pro_model if use_pro else self.model
+            
             # Мы ожидаем, что Gemini вернет строго JSON
-            response = await self.model.generate_content_async(
+            response = await active_model.generate_content_async(
                 contents,
                 generation_config={"response_mime_type": "application/json"}
             )
@@ -133,11 +138,12 @@ class GeminiTranslationService:
             logger.error(f"Непредвиденная ошибка при обращении к Gemini (fields): {e}")
             raise e
 
-    async def analyze_document_for_template(self, image_path: Union[str, Path, list[Union[str, Path]]]) -> dict:
+    async def analyze_document_for_template(self, image_path: Union[str, Path, list[Union[str, Path]]], use_pro: bool = False) -> dict:
         """
         Анализирует изображение документа и автоматически генерирует для него структуру шаблона:
         1. doc_name - понятное название документа.
         2. fields - массив полей (keyword, ru_name, en_name).
+        Если use_pro=True, используется усиленная модель.
         """
         prompt = (
             "You are a document analyzer. Review the provided document images. "
@@ -161,7 +167,9 @@ class GeminiTranslationService:
             else:
                 contents.append(PIL.Image.open(image_path))
                 
-            response = await self.model.generate_content_async(
+            active_model = self.pro_model if use_pro else self.model
+            
+            response = await active_model.generate_content_async(
                 contents,
                 generation_config={"response_mime_type": "application/json"}
             )

@@ -82,7 +82,8 @@ async def handle_document_photo(message: types.Message, state: FSMContext):
     total_pages = len(file_ids)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Завершить и анализировать", callback_data="admin_analyze_template")]
+        [InlineKeyboardButton(text="⚡ Быстрый анализ (Flash)", callback_data="admin_analyze_template_flash")],
+        [InlineKeyboardButton(text="🧠 Глубокий анализ (Pro)", callback_data="admin_analyze_template_pro")]
     ])
     
     text = f"📄 Загружено страниц: **{total_pages}**\nОтправьте еще фото, либо нажмите кнопку ниже для запуска анализа:"
@@ -98,7 +99,7 @@ async def handle_document_photo(message: types.Message, state: FSMContext):
         msg = await message.reply(text, reply_markup=keyboard, parse_mode="Markdown")
         await state.update_data(last_tracking_msg_id=msg.message_id)
 
-@router.callback_query(F.data == "admin_analyze_template", AddDocState.waiting_for_photos)
+@router.callback_query(F.data.startswith("admin_analyze_template_"), AddDocState.waiting_for_photos)
 async def analyze_template(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     data = await state.get_data()
@@ -108,7 +109,9 @@ async def analyze_template(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("❌ Ошибка: фото не найдены. Отправьте фото заново.")
         return
         
-    processing_msg = await callback.message.edit_text("⏳ Анализирую структуру документа. Это может занять секунд 10-15...")
+    use_pro = callback.data.endswith("_pro")
+    model_name = "Pro" if use_pro else "Flash"
+    processing_msg = await callback.message.edit_text(f"⏳ Анализирую структуру документа (модель: {model_name}). Это может занять секунд 10-25...")
     
     if not gemini_service or not file_manager:
         await processing_msg.edit_text("❌ Ошибка: Сервисы не настроены. Обратитесь к администратору.")
@@ -117,7 +120,7 @@ async def analyze_template(callback: CallbackQuery, state: FSMContext):
     photo_paths = []
     try:
         photo_paths = await file_manager.download_photos(callback.bot, callback.from_user.id, file_ids)
-        result = await gemini_service.analyze_document_for_template(photo_paths)
+        result = await gemini_service.analyze_document_for_template(photo_paths, use_pro=use_pro)
         
         doc_name = result.get("doc_name", "Новый документ")
         doc_id = generate_doc_id(doc_name)

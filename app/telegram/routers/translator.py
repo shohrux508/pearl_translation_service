@@ -117,7 +117,8 @@ async def handle_document_photo(message: types.Message, state: FSMContext):
     total_pages = len(file_ids)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="▶️ Начать распознавание", callback_data="start_recognition")]
+        [InlineKeyboardButton(text="⚡ Быстрое распознавание (Flash)", callback_data="start_recog_flash")],
+        [InlineKeyboardButton(text="🧠 Точное распознавание (Pro)", callback_data="start_recog_pro")]
     ])
     
     text = f"📄 Получено **{total_pages}** страниц документа\n\nМожете отправить еще фото, либо нажмите кнопку ниже для продолжения:"
@@ -141,7 +142,7 @@ async def handle_document_photo(message: types.Message, state: FSMContext):
         msg = await message.reply(text, reply_markup=keyboard, parse_mode="Markdown")
         await state.update_data(last_tracking_msg_id=msg.message_id)
 
-@router.callback_query(F.data == "start_recognition", TranslationState.waiting_for_photos)
+@router.callback_query(F.data.startswith("start_recog_"), TranslationState.waiting_for_photos)
 async def start_recognition_callback(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     data = await state.get_data()
@@ -150,6 +151,9 @@ async def start_recognition_callback(callback: CallbackQuery, state: FSMContext)
     if not file_ids:
         await callback.message.answer("❌ Ошибка: фото не найдены. Отправьте фото заново.")
         return
+        
+    use_pro = callback.data.endswith("_pro")
+    await state.update_data(use_pro=use_pro)
         
     await ask_for_doc_type(callback.message, state, edit_message=True)
 
@@ -200,6 +204,7 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     doc_type = data.get("doc_type")
     file_ids = data.get("file_ids", [])
+    use_pro = data.get("use_pro", False)
     await state.clear()
     
     if not file_ids or not doc_type:
@@ -244,15 +249,17 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
         
         # 3. Распознавание через Gemini
         total_photos = len(photo_paths)
+        model_tag = "Pro" if use_pro else "Flash"
         await processing_msg.edit_text(
-            f"✅ Документ: **{current_config['name']}**\n✅ Язык перевода: **{lang_name}**\n\n📸 Фото получено\n\n⏳ Обрабатываем документ...\n[2/3] Извлечение данных",
+            f"✅ Документ: **{current_config['name']}**\n✅ Язык перевода: **{lang_name}**\n\n📸 Фото получено\n\n⏳ Обрабатываем документ ({model_tag})...\n[2/3] Извлечение данных",
             parse_mode="Markdown"
         )
         
         extracted_data = await gemini_service.extract_data_from_image(
             image_path=photo_paths,
             prompt=current_config["prompt"],
-            json_schema=current_config.get("json_schema")
+            json_schema=current_config.get("json_schema"),
+            use_pro=use_pro
         )
         
         if "error" in extracted_data:
