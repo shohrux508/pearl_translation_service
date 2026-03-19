@@ -1,13 +1,5 @@
 {
     "document_types": {
-        "id_card": {
-            "name": "ID карта",
-            "emoji": "🪪"
-        },
-        "diploma_v2": {
-            "name": "Приложение к диплому (Схема)",
-            "emoji": "🎓"
-        },
         "zagranpasport": {
             "name": "Загранпаспорт",
             "emoji": "🇺🇿"
@@ -17,188 +9,15 @@
             "emoji": "🤍"
         },
         "pasport_respubliki_uzbekistan": {
-            "name": "Паспорт Республики Узбекистан",
+            "name": "ЗАГРАНПАСПОРТ.",
+            "emoji": "🇺🇿"
+        },
+        "udostoverenie_lichnosti": {
+            "name": "ID Карта",
             "emoji": "🇺🇿"
         }
     },
     "configs": {
-        "id_card": {
-            "fields": {
-                "given_name": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Имя",
-                        "en": "Given Name"
-                    }
-                },
-                "surname": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Фамилия",
-                        "en": "Surname"
-                    }
-                },
-                "patronymic": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Отчество",
-                        "en": "Patronymic"
-                    }
-                },
-                "citizenship": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Гражданство",
-                        "en": "Citizenship"
-                    }
-                },
-                "date_of_birth": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Дата рождения",
-                        "en": "Date of Birth"
-                    }
-                },
-                "card_number": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Номер документа",
-                        "en": "Document Number"
-                    }
-                },
-                "date_of_issue": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Дата выдачи",
-                        "en": "Date of Issue"
-                    }
-                },
-                "date_of_expiry": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "Срок действия",
-                        "en": "Date of Expiry"
-                    }
-                },
-                "personal_identification_number": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "ПИНФЛ",
-                        "en": "Personal Identification Number"
-                    }
-                },
-                "place_of_issue": {
-                    "type": "string",
-                    "ui_mapping": {
-                        "ru": "МЕСТО ВЫДАЧИ",
-                        "en": "Place of Issue"
-                    }
-                }
-            }
-        },
-        "diploma_v2": {
-            "fields": {
-                "fullname": {
-                    "type": "string",
-                    "description": "ФИО студента (например: Солижанов Шохбоз Фахрутдин Угли)",
-                    "ui_mapping": {
-                        "ru": "ФИО",
-                        "en": "Full Name"
-                    }
-                },
-                "birth_date": {
-                    "type": "string",
-                    "description": "Дата рождения",
-                    "ui_mapping": {
-                        "ru": "Дата рождения",
-                        "en": "Date of Birth"
-                    }
-                },
-                "specialization": {
-                    "type": "string",
-                    "description": "Специальность",
-                    "ui_mapping": {
-                        "ru": "Специальность",
-                        "en": "Specialization"
-                    }
-                },
-                "gpa": {
-                    "type": "string",
-                    "description": "Средний балл (GPA)",
-                    "ui_mapping": {
-                        "ru": "Средний балл",
-                        "en": "GPA"
-                    },
-                    "validation_logic": {
-                        "max": 5.0
-                    }
-                }
-            },
-            "tables": {
-                "academic_records": {
-                    "description": "Список всех изученных предметов с оценками и часами",
-                    "ui_mapping": {
-                        "ru": "Предметы и оценки",
-                        "en": "Academic Records"
-                    },
-                    "items": {
-                        "n": {
-                            "type": "integer",
-                            "description": "Порядковый номер"
-                        },
-                        "subject": {
-                            "type": "string",
-                            "description": "Название предмета",
-                            "ui_mapping": {
-                                "ru": "Предмет",
-                                "en": "Subject"
-                            }
-                        },
-                        "hours": {
-                            "type": "integer",
-                            "description": "Количество часов",
-                            "ui_mapping": {
-                                "ru": "Часы",
-                                "en": "Hours"
-                            }
-                        },
-                        "grade": {
-                            "type": "string",
-                            "description": "Оценка",
-                            "ui_mapping": {
-                                "ru": "Оценка",
-                                "en": "Grade"
-                            }
-                        }
-                    }
-                },
-                "practices": {
-                    "description": "Список практик",
-                    "ui_mapping": {
-                        "ru": "Практики",
-                        "en": "Practices"
-                    },
-                    "items": {
-                        "title": {
-                            "type": "string",
-                            "description": "Название практики",
-                            "ui_mapping": {
-                                "ru": "Название",
-                                "en": "Title"
-                            }
-                        },
-                        "hours": {
-                            "type": "integer",
-                            "description": "Количество часов",
-                            "ui_mapping": {
-                                "ru": "Часы",
-                                "en": "Hours"
-                            }
-                        }
-                    }
-                }
-            }
-        },
         "zagranpasport": {
             "fields": {
                 "surname": {
@@ -598,6 +417,108 @@
                     "type": "string",
                     "ui_mapping": {
                         "ru": "Машиносчитываемая зона",
+                        "en": "Machine Readable Zone"
+                    }
+                }
+            }
+        },
+        "udostoverenie_lichnosti": {
+            "fields": {
+                "surname": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Фамилия",
+                        "en": "Surname"
+                    }
+                },
+                "given_names": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Имя",
+                        "en": "Given name(s)"
+                    }
+                },
+                "patronymic": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Отчество",
+                        "en": "Patronymic"
+                    }
+                },
+                "date_of_birth": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Дата рождения",
+                        "en": "Date of birth"
+                    }
+                },
+                "date_of_issue": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Дата выдачи",
+                        "en": "Date of issue"
+                    }
+                },
+                "date_of_expiry": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Срок действия",
+                        "en": "Date of expiry"
+                    }
+                },
+                "signature": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Подпись",
+                        "en": "Signature"
+                    }
+                },
+                "sex": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Пол",
+                        "en": "Sex"
+                    }
+                },
+                "citizenship": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Гражданство",
+                        "en": "Citizenship"
+                    }
+                },
+                "card_number": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Номер карты",
+                        "en": "Card number"
+                    }
+                },
+                "personal_number": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Персональный номер",
+                        "en": "Personal number"
+                    }
+                },
+                "place_of_birth": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Место рождения",
+                        "en": "Place of birth"
+                    }
+                },
+                "place_of_issue": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "Место выдачи",
+                        "en": "Place of issue"
+                    }
+                },
+                "mrz": {
+                    "type": "string",
+                    "ui_mapping": {
+                        "ru": "mrz",
                         "en": "Machine Readable Zone"
                     }
                 }
