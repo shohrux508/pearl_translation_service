@@ -3,84 +3,41 @@ import logging
 from pathlib import Path
 from aiogram import Router, types, F
 from aiogram.filters import CommandStart
-from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import FSInputFile, CallbackQuery, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import StatesGroup, State
 
 from app.container import Container
 from app.services.document_manager import doc_manager
+from app.telegram.states.translator_states import TranslationState
+from app.telegram.views.translator_texts import (
+    START_GREETING, PHOTO_INSTRUCTION_TEXT, HELP_TEXT, ERROR_MSG_RECOGNITION, get_validation_text
+)
+from app.telegram.keyboards.translator_kb import (
+    get_start_keyboard, get_flash_pro_keyboard, get_doc_types_keyboard,
+    get_language_keyboard, get_retry_photo_keyboard, get_validation_keyboard,
+    get_table_view_keyboard
+)
 
 router = Router()
 container_instance: Container = None
 
-START_GREETING = (
-    "👋 **Pearl — перевод документов с помощью AI**\n\n"
-    "Что вы хотите сделать?"
-)
-
-PHOTO_INSTRUCTION_TEXT = (
-    "📷 **Сфотографируйте документ**\n\n"
-    "Советы для лучшего распознавания:\n"
-    "• хороший свет\n"
-    "• весь документ в кадре\n"
-    "• без бликов"
-)
-
-HELP_TEXT = (
-    "❓ **Как это работает**\n\n"
-    "1️⃣ Отправьте фото документа (или нескольких страниц)\n"
-    "2️⃣ Проверьте распознанные поля и отредактируйте их при необходимости\n"
-    "3️⃣ Получите готовый перевод в формате Word"
-)
-
-ERROR_MSG_RECOGNITION = (
-    "⚠️ Не удалось распознать документ\n\n"
-    "Причины:\n"
-    "• плохое освещение\n"
-    "• размытое фото\n"
-    "• часть документа не попала в кадр\n\n"
-    "Попробуйте отправить фото снова."
-)
-
-class TranslationState(StatesGroup):
-    waiting_for_photos = State()
-    choosing_doc_type = State()
-    choosing_language = State()
-    validating_data = State()
-    editing_field = State()
-    editing_raw_json = State()
-    viewing_table = State()
-    editing_table_row = State()
-
 def setup_router(container: Container):
-    """Инжектим контейнер в роутер."""
     global container_instance
     container_instance = container
 
 def get_service(name: str):
-    """Безопасное получение сервиса из DI контейнера."""
     try:
         return container_instance.get(name)
     except (KeyError, AttributeError):
         return None
 
 def get_gemini_service():
-    """Безопасное получение сервиса Gemini (оставлено для совместимости)."""
     return get_service("gemini_service")
 
 @router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📄 Перевод документа")],
-            [KeyboardButton(text="🗂 Мои шаблоны"), KeyboardButton(text="➕ Добавить шаблон")],
-            [KeyboardButton(text="❓ Как это работает?")]
-        ],
-        resize_keyboard=True,
-        input_field_placeholder="Выберите действие ниже"
-    )
-    await message.answer(START_GREETING, reply_markup=keyboard, parse_mode="Markdown")
+    await message.answer(START_GREETING, reply_markup=get_start_keyboard(), parse_mode="Markdown")
 
 @router.message(F.text == "📄 Перевод документа")
 async def menu_translate(message: types.Message, state: FSMContext):
@@ -101,7 +58,6 @@ async def retry_photo_callback(callback: CallbackQuery, state: FSMContext):
 
 @router.message(F.photo, TranslationState.waiting_for_photos)
 async def handle_document_photo(message: types.Message, state: FSMContext):
-    """Принимает фотографии документа, накапливая их."""
     gemini_service = get_gemini_service()
     if not gemini_service:
         await message.reply("❌ Сервис перевода (Gemini) в данный момент недоступен. Проверьте API ключ.")
@@ -116,14 +72,9 @@ async def handle_document_photo(message: types.Message, state: FSMContext):
     
     total_pages = len(file_ids)
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚡ Быстрое распознавание (Flash)", callback_data="start_recog_flash")],
-        [InlineKeyboardButton(text="🧠 Точное распознавание (Pro)", callback_data="start_recog_pro")]
-    ])
-    
+    keyboard = get_flash_pro_keyboard()
     text = f"📄 Получено **{total_pages}** страниц документа\n\nМожете отправить еще фото, либо нажмите кнопку ниже для продолжения:"
     
-    # Check if there is already a message tracking this grouped upload to edit it, or send a new one
     last_msg_id = data.get("last_tracking_msg_id")
     if last_msg_id:
         try:
@@ -135,7 +86,6 @@ async def handle_document_photo(message: types.Message, state: FSMContext):
                 parse_mode="Markdown"
             )
         except Exception:
-             # Just send a new message if editing fails
              msg = await message.reply(text, reply_markup=keyboard, parse_mode="Markdown")
              await state.update_data(last_tracking_msg_id=msg.message_id)
     else:
@@ -158,18 +108,7 @@ async def start_recognition_callback(callback: CallbackQuery, state: FSMContext)
     await ask_for_doc_type(callback.message, state, edit_message=True)
 
 async def ask_for_doc_type(message: types.Message, state: FSMContext, edit_message: bool = False) -> None:
-    """Отправляет или обновляет сообщение для выбора типа документа."""
-    buttons = []
-    doc_types = doc_manager.get_types()
-    for doc_id, doc_info in doc_types.items():
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"{doc_info['emoji']} {doc_info['name']}", 
-                callback_data=f"doctype_{doc_id}"
-            )
-        ])
-        
-    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    keyboard = get_doc_types_keyboard()
     text = "📸 Все фото получены!\nПожалуйста, выберите тип документа, чтобы мы могли правильно его перевести:"
 
     if edit_message:
@@ -181,14 +120,10 @@ async def ask_for_doc_type(message: types.Message, state: FSMContext, edit_messa
 
 @router.callback_query(F.data.startswith("doctype_"), TranslationState.choosing_doc_type)
 async def process_document_type(callback: CallbackQuery, state: FSMContext):
-    """Обрабатывает выбор типа документа и предлагает выбрать язык перевода."""
     doc_type = callback.data.replace("doctype_", "")
     await state.update_data(doc_type=doc_type)
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🇷🇺 Русский язык", callback_data="lang_ru")],
-        [InlineKeyboardButton(text="🇬🇧 Английский язык", callback_data="lang_en")]
-    ])
+    keyboard = get_language_keyboard()
     
     await callback.answer()
     await callback.message.edit_text(
@@ -199,7 +134,6 @@ async def process_document_type(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("lang_"), TranslationState.choosing_language)
 async def process_language(callback: CallbackQuery, state: FSMContext):
-    """Обрабатывает выбор языка и запускает пайплайн распознавания и перевода."""
     lang = callback.data.replace("lang_", "")
     data = await state.get_data()
     doc_type = data.get("doc_type")
@@ -234,7 +168,6 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
     photo_paths = []
     
     try:
-        # 1. Скачивание файлов
         try:
             photo_paths = await file_manager.download_photos(callback.bot, callback.from_user.id, file_ids)
         except Exception as e:
@@ -242,12 +175,10 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
             await processing_msg.edit_text(f"❌ Не удалось скачать фото:\n{str(e)}\n\nПопробуйте отправить заново.")
             return
 
-        # 2. Подготовка шаблона в отдельном потоке (I/O)
         template_path = Path("templates") / current_config["template"]
         output_path = file_manager.get_output_path(callback.from_user.id, file_ids[0])
         await asyncio.to_thread(docx_service.create_temp_template, template_path, current_config["name"], lang_name)
         
-        # 3. Распознавание через Gemini
         total_photos = len(photo_paths)
         model_tag = "Pro" if use_pro else "Flash"
         await processing_msg.edit_text(
@@ -265,7 +196,6 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
         if "error" in extracted_data:
             raise ValueError(f"Ошибка Gemini: {extracted_data['error']}\n{extracted_data.get('raw_text', '')}")
 
-        # 4. Обновление состояния и переход к валидации
         await processing_msg.edit_text(
             f"✅ Документ: **{current_config['name']}**\n✅ Язык перевода: **{lang_name}**\n\n📸 Фото получено\n\n✅ Обработка завершена\n[3/3] Подготовка документа",
             parse_mode="Markdown"
@@ -286,107 +216,20 @@ async def process_language(callback: CallbackQuery, state: FSMContext):
         
     except ValueError as e:
         logging.warning(f"Recognition failed during processing: {e}")
-        retry_kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📸 Отправить новое фото", callback_data="retry_photo")]
-        ])
+        retry_kb = get_retry_photo_keyboard()
         await processing_msg.edit_text(ERROR_MSG_RECOGNITION, reply_markup=retry_kb)
         
     except Exception as e:
         logging.exception("Error processing document language pipeline")
         await processing_msg.edit_text(f"❌ Произошла ошибка при обработке:\n{str(e)}")
     finally:
-        # Гарантированное удаление фото
         if file_manager:
             file_manager.cleanup_files(photo_paths)
 
-def get_validation_keyboard(data_dict: dict, lang_code: str = "ru") -> InlineKeyboardMarkup:
-    buttons = []
-    
-    # Check if this is the new schema format (has fields, tables, etc) or flat format
-    has_schema = "fields" in data_dict or "tables" in data_dict
-    
-    if has_schema:
-        fields = data_dict.get("fields", {})
-        tables = data_dict.get("tables", {})
-        
-        # Add basic fields as editable buttons
-        current_row = []
-        for key in fields.keys():
-            localized_name = doc_manager.localize_field(key, lang_code)
-            btn_text = f"✏️ {localized_name[:20]}"
-            cb_data = f"editf_{key}"
-            if len(cb_data) > 64: cb_data = cb_data[:64]
-            current_row.append(InlineKeyboardButton(text=btn_text, callback_data=cb_data))
-            if len(current_row) == 2:
-                buttons.append(current_row)
-                current_row = []
-        if current_row:
-            buttons.append(current_row)
-            
-        # Add table buttons
-        for table_key in tables.keys():
-            localized_name = doc_manager.localize_field(table_key, lang_code)
-            btn_text = f"📊 Редактировать {localized_name[:15]}" if lang_code == "ru" else f"📊 Edit {localized_name[:15]}"
-            cb_data = f"viewt_{table_key}_0"
-            if len(cb_data) > 64: cb_data = cb_data[:64]
-            buttons.append([InlineKeyboardButton(text=btn_text, callback_data=cb_data)])
-            
-        # Raw JSON mode
-        raw_text = "⚙️ Проверить сырые данные (JSON)" if lang_code == "ru" else "⚙️ Check raw data (JSON)"
-        buttons.append([InlineKeyboardButton(text=raw_text, callback_data="raw_json_mode")])
-        
-    else:
-        # Legacy flat mapping
-        current_row = []
-        for key in data_dict.keys():
-            localized_name = doc_manager.localize_field(key, lang_code)
-            btn_text = f"✏️ {localized_name[:20]}"
-            cb_data = f"editf_{key}"
-            if len(cb_data) > 64: cb_data = cb_data[:64]
-            current_row.append(InlineKeyboardButton(text=btn_text, callback_data=cb_data))
-            if len(current_row) == 2:
-                buttons.append(current_row)
-                current_row = []
-        if current_row:
-            buttons.append(current_row)
-    
-    confirm_text = "✅ Подтвердить и создать" if lang_code == "ru" else "✅ Confirm and generate"
-    buttons.append([InlineKeyboardButton(text=confirm_text, callback_data="confirm_generation")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
 async def send_validation_menu(message: types.Message, data_dict: dict, lang_name: str = "выбранный", lang_code: str = "ru"):
-    title = f"🤖 **Результат распознавания ({lang_name}):**\n" if lang_code == "ru" else f"🤖 **Extraction Result ({lang_name}):**\n"
-    lines = [title]
-    has_schema = "fields" in data_dict or "tables" in data_dict
-    
-    if has_schema:
-        # Construct a beautiful summary
-        metadata = data_dict.get("metadata", {})
-        fields = data_dict.get("fields", {})
-        tables = data_dict.get("tables", {})
-        
-        lines.append("📌 **Все извлеченные данные:**" if lang_code == "ru" else "📌 **All extracted data:**")
-        for k, v in fields.items():
-            localized_name = doc_manager.localize_field(k, lang_code)
-            lines.append(f"▪️ **{localized_name}**: `{v}`")
-            
-        # Summary for tables
-        for tk, tv in tables.items():
-            if isinstance(tv, list):
-                localized_name = doc_manager.localize_field(tk, lang_code)
-                lines.append(f"📋 **{localized_name}**: распознано {len(tv)} строк" if lang_code == "ru" else f"📋 **{localized_name}**: {len(tv)} rows extracted")
-                
-        instr = "\n_Всё верно? Если нужно, отредактируйте данные ниже._" if lang_code == "ru" else "\n_Is everything correct? Edit data below if needed._"
-    else:
-        # Legacy flat view
-        for k, v in data_dict.items():
-            localized_name = doc_manager.localize_field(k, lang_code)
-            lines.append(f"▪️ **{localized_name}**: `{v}`")
-        instr = "\n_Нажмите на кнопку с именем поля ниже, если нужно его исправить._" if lang_code == "ru" else "\n_Click on the field name below if you need to manually fix it._"
-        
-    text = "\n".join(lines) + "\n" + instr
-    
-    await message.answer(text, reply_markup=get_validation_keyboard(data_dict, lang_code), parse_mode="Markdown")
+    text = get_validation_text(data_dict, lang_name, lang_code)
+    keyboard = get_validation_keyboard(data_dict, lang_code)
+    await message.answer(text, reply_markup=keyboard, parse_mode="Markdown")
 
 @router.callback_query(F.data == "raw_json_mode", TranslationState.validating_data)
 async def process_raw_json_mode(callback: CallbackQuery, state: FSMContext):
@@ -405,7 +248,7 @@ async def process_raw_json_mode(callback: CallbackQuery, state: FSMContext):
         f"```json\n{json_text}\n```"
     ) if lang_code == "ru" else (
         "⚙️ **Raw JSON Mode**\n\n"
-        "Copy the text below, fix the values and send it back.\n"
+        "Copy the текст below, fix the values and send it back.\n"
         "To cancel, send /cancel\n\n"
         f"```json\n{json_text}\n```"
     )
@@ -449,7 +292,6 @@ async def process_edit_field_selection(callback: CallbackQuery, state: FSMContex
     data = await state.get_data()
     extracted_data = data.get("extracted_data", {})
     
-    # Handle both schema and flat formats
     if "fields" in extracted_data:
         current_value = extracted_data.get("fields", {}).get(field_key, "")
     else:
@@ -516,7 +358,6 @@ async def process_view_table(callback: CallbackQuery, state: FSMContext):
     start_idx = page * ITEMS_PER_PAGE
     end_idx = min(start_idx + ITEMS_PER_PAGE, len(table_data))
     
-    # Store context for returning later
     await state.update_data(viewing_table_key=table_key, viewing_table_page=page)
     await state.set_state(TranslationState.viewing_table)
     
@@ -525,35 +366,14 @@ async def process_view_table(callback: CallbackQuery, state: FSMContext):
     
     lines = [f"{title} (стр. {page + 1} из {max(1, total_pages)})", ""]
     
-    buttons = []
-    
     for i in range(start_idx, end_idx):
         row = table_data[i]
-        # Create a tiny summary of the row
         preview = ", ".join([f"{k}: {v}" for k, v in list(row.items())[:2]])
         if len(preview) > 30: preview = preview[:27] + "..."
-        
         lines.append(f"#{i+1}: `{preview}`")
-        btn_text = f"✏️ Строка {i+1}" if lang_code == "ru" else f"✏️ Row {i+1}"
         
-        cb_data = f"editt_{table_key}_{i}"
-        if len(cb_data) > 64: cb_data = cb_data[:64]
-        buttons.append([InlineKeyboardButton(text=btn_text, callback_data=cb_data)])
-        
-    nav_row = []
-    if page > 0:
-        nav_row.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"viewt_{table_key}_{page-1}"))
-    if page < total_pages - 1:
-        nav_row.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"viewt_{table_key}_{page+1}"))
-    
-    if nav_row:
-        buttons.append(nav_row)
-        
-    back_text = "🔙 Вернуться к сводке" if lang_code == "ru" else "🔙 Back to summary"
-    buttons.append([InlineKeyboardButton(text=back_text, callback_data="back_to_validation")])
-    
     text = "\n".join(lines)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    keyboard = get_table_view_keyboard(table_key, page, total_pages, start_idx, end_idx, lang_code)
     
     await callback.answer()
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
@@ -665,20 +485,15 @@ async def confirm_generation(callback: CallbackQuery, state: FSMContext):
         return
 
     try:
-        # Для новой схемы нужно объединить fields и таблицы в плоский словарь для docx_service
-        # (чтобы шаблоны, ожидающие {{given_name}} продолжали работать)
         pass_data = {}
         pass_data.update(extracted_data.get("fields", {}))
         pass_data.update(extracted_data.get("tables", {}))
-        # На всякий случай сохраняем и плоские данные, если это старый формат
         for k, v in extracted_data.items():
             if k not in ["fields", "tables", "metadata"]:
                 pass_data[k] = v
         
-        # Вставляем данные в Word (I/O, в отдельном потоке)
         await asyncio.to_thread(docx_service.generate_docx, pass_data, template_path, output_path)
         
-        # Отправляем готовый Word
         await processing_msg.edit_text("✅ Документ готов! Отправляю файл...")
         document = FSInputFile(output_path)
         await callback.message.answer_document(document, caption=f"Вот ваш проверенный перевод на {lang_name.lower()} язык!")

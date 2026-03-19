@@ -35,5 +35,26 @@ def main():
     except Exception as e:
         print(f"Произошла ошибка при получении списка моделей: {e}")
 
+    print("\n" + "="*50)
+    while True:
+        model_name = input("Введите название модели для теста (например, models/gemini-2.5-flash) или 'q' для выхода: ").strip()
+        if model_name.lower() in ['q', 'quit', 'exit', '']:
+            break
+            
+        prompt = input("Введите ваш запрос: ").strip()
+        if not prompt:
+            print("Ошибка: Запрос не может быть пустым.")
+            continue
+            
+        try:
+            print(f"\nОтправка запроса к {model_name}...")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            print("=== Ответ модели ===")
+            print(response.text)
+            print("====================\n")
+        except Exception as e:
+            print(f"Ошибка при обращении к модели: {e}\n")
+
 if __name__ == "__main__":
     main()
