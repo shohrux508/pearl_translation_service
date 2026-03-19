@@ -81,10 +81,17 @@ async def handle_document_photo(message: types.Message, state: FSMContext):
     
     total_pages = len(file_ids)
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚡ Быстрый анализ (Flash)", callback_data="admin_analyze_template_flash")],
-        [InlineKeyboardButton(text="🧠 Глубокий анализ (Pro)", callback_data="admin_analyze_template_pro")]
-    ])
+    admin_ids_env = os.getenv("ADMIN_IDS", "")
+    admin_ids = [int(i.strip()) for i in admin_ids_env.split(",") if i.strip().isdigit()]
+
+    inline_keyboard = [
+        [InlineKeyboardButton(text="⚡ Быстрый анализ (Flash)", callback_data="admin_analyze_template_flash")]
+    ]
+    
+    if message.from_user.id in admin_ids:
+        inline_keyboard.append([InlineKeyboardButton(text="🧠 Глубокий анализ (Pro)", callback_data="admin_analyze_template_pro")])
+        
+    keyboard = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
     
     text = f"📄 Загружено страниц: **{total_pages}**\nОтправьте еще фото, либо нажмите кнопку ниже для запуска анализа:"
     
@@ -110,6 +117,14 @@ async def analyze_template(callback: CallbackQuery, state: FSMContext):
         return
         
     use_pro = callback.data.endswith("_pro")
+    
+    if use_pro:
+        admin_ids_env = os.getenv("ADMIN_IDS", "")
+        admin_ids = [int(i.strip()) for i in admin_ids_env.split(",") if i.strip().isdigit()]
+        if callback.from_user.id not in admin_ids:
+            await callback.answer("❌ Глубокий анализ доступен только администраторам.", show_alert=True)
+            return
+
     model_name = "Pro" if use_pro else "Flash"
     processing_msg = await callback.message.edit_text(f"⏳ Анализирую структуру документа (модель: {model_name}). Это может занять секунд 10-25...")
     

@@ -30,3 +30,9 @@ async def test_menu_translate():
     
     args, kwargs = message.answer.call_args
     assert "Сфотографируйте документ" in args[0]
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(test_cmd_start())
+    asyncio.run(test_menu_translate())
+    print("\n[SUCCESS] Custom runner passed all router tests!")
