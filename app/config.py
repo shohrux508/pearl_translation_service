@@ -10,7 +10,7 @@ logging.basicConfig(
 class Settings(BaseSettings):
     BOT_TOKEN: str
     GEMINI_API_KEY: str = "" # Ключ не сделан обязательным, чтобы не ломать старый код
-    API_HOST: str = "0.0.0.0"
+    API_HOST: str = "127.0.0.1"
     PORT: int = 8000
     RUN_TELEGRAM: bool = True
     RUN_API: bool = True

@@ -118,7 +118,7 @@ BOT_TOKEN=1234567890:ААBВСС...          # Токен от @BotFather
 GEMINI_API_KEY=AIzaSy...                 # Developer API Ключ из Google AI Studio
 
 # Настройки сети
-API_HOST=0.0.0.0
+API_HOST=127.0.0.1
 PORT=8000
 
 # Feature flags
