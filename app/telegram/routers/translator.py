@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
+import itertools
 from aiogram import Router, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
@@ -530,7 +531,7 @@ async def process_view_table(callback: CallbackQuery, state: FSMContext):
     for i in range(start_idx, end_idx):
         row = table_data[i]
         # Create a tiny summary of the row
-        preview = ", ".join([f"{k}: {v}" for k, v in list(row.items())[:2]])
+        preview = ", ".join([f"{k}: {v}" for k, v in itertools.islice(row.items(), 2)])
         if len(preview) > 30: preview = preview[:27] + "..."
         
         lines.append(f"#{i+1}: `{preview}`")
