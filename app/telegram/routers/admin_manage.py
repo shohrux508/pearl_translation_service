@@ -5,9 +5,12 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, FSInputFile
 from app.container import Container
 from app.services.document_manager import doc_manager
+from app.telegram.filters import IsAdmin
 from pathlib import Path
 
 router = Router()
+router.message.filter(IsAdmin())
+router.callback_query.filter(IsAdmin())
 
 class ManageDocState(StatesGroup):
     editing_name = State()

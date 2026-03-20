@@ -7,8 +7,11 @@ from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from app.container import Container
 from app.services.document_manager import doc_manager
+from app.telegram.filters import IsAdmin
 
 router = Router()
+router.message.filter(IsAdmin())
+router.callback_query.filter(IsAdmin())
 
 import re
 import uuid
