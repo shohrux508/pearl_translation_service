@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -68,11 +69,12 @@ class GeminiTranslationService:
             
             if isinstance(image_path, list):
                 logger.info(f"Отправка {len(image_path)} изображений в Gemini для анализа...")
-                for p in image_path:
-                    contents.append(PIL.Image.open(p))
+                images = await asyncio.gather(*[asyncio.to_thread(PIL.Image.open, p) for p in image_path])
+                contents.extend(images)
             else:
                 logger.info(f"Отправка изображения {image_path} в Gemini для анализа...")
-                contents.append(PIL.Image.open(image_path))
+                image = await asyncio.to_thread(PIL.Image.open, image_path)
+                contents.append(image)
             
             active_model = self.pro_model if use_pro else self.model
             
@@ -162,10 +164,11 @@ class GeminiTranslationService:
             contents = [prompt]
             
             if isinstance(image_path, list):
-                for p in image_path:
-                    contents.append(PIL.Image.open(p))
+                images = await asyncio.gather(*[asyncio.to_thread(PIL.Image.open, p) for p in image_path])
+                contents.extend(images)
             else:
-                contents.append(PIL.Image.open(image_path))
+                image = await asyncio.to_thread(PIL.Image.open, image_path)
+                contents.append(image)
                 
             active_model = self.pro_model if use_pro else self.model
             
