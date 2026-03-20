@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     PORT: int = 8000
     RUN_TELEGRAM: bool = True
     RUN_API: bool = True
+    RUN_WEBAPP: bool = False
+    WEBAPP_PORT: int = 8001
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

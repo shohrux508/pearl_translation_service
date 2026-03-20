@@ -29,7 +29,7 @@ class App:
         if settings.RUN_TELEGRAM:
             from app.telegram.bot import start_telegram
             logger.info("Starting Telegram Bot...")
-            return start_telegram(self.container)
+            return await start_telegram(self.container)
         return None
 
     async def setup_api(self):
@@ -37,6 +37,13 @@ class App:
             from app.api.server import start_api
             logger.info("Starting API Server...")
             return start_api(self.container)
+        return None
+
+    async def setup_webapp(self):
+        if settings.RUN_WEBAPP:
+            from app.webapp.server import start_webapp
+            logger.info("Starting WebApp Server...")
+            return start_webapp(self.container)
         return None
 
     async def run(self):
@@ -51,9 +58,13 @@ class App:
         api_task = await self.setup_api()
         if api_task:
             tasks.append(api_task)
+            
+        webapp_task = await self.setup_webapp()
+        if webapp_task:
+            tasks.append(webapp_task)
 
         if not tasks:
-            logger.warning("No components enabled to run (RUN_TELEGRAM=False, RUN_API=False)")
+            logger.warning("No components enabled to run (RUN_TELEGRAM=False, RUN_API=False, RUN_WEBAPP=False)")
             return
 
         await asyncio.gather(*tasks)
