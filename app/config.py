@@ -1,20 +1,41 @@
-import logging
+"""
+Единая конфигурация приложения (Pydantic Settings).
+
+Все значения читаются из .env файла.
+"""
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 
 class Settings(BaseSettings):
+    # ── Telegram ──────────────────────────────────────────────────────
     BOT_TOKEN: str
-    GEMINI_API_KEY: str = "" # Ключ не сделан обязательным, чтобы не ломать старый код
+    ADMIN_IDS: list[int] = []
+
+    # ── AI / Gemini ───────────────────────────────────────────────────
+    GEMINI_API_KEY: str = ""
+    GEMINI_API_KEY2: str = ""
+
+    # ── API ───────────────────────────────────────────────────────────
     API_HOST: str = "0.0.0.0"
     PORT: int = 8000
     RUN_TELEGRAM: bool = True
     RUN_API: bool = True
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # ── Webapp ────────────────────────────────────────────────────────
+    RUN_WEBAPP: bool = False
+    WEBAPP_PORT: int = 8001
+
+    # ── Логирование ───────────────────────────────────────────────────
+    LOG_LEVEL: str = "INFO"
+    LOG_FILE: str | None = None
+    LOG_JSON: bool = False
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
 
 settings = Settings()

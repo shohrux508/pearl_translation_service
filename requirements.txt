@@ -1,9 +1,24 @@
+# ── Core ──────────────────────────────────────────────────────────
 aiogram>=3.0
 fastapi
 uvicorn
 pydantic-settings
 python-dotenv
-pytest
-docxtpl
+
+# ── AI ────────────────────────────────────────────────────────────
 google-generativeai
 pillow
+
+# ── Document processing ──────────────────────────────────────────
+docxtpl
+
+# ── Logging ───────────────────────────────────────────────────────
+loguru
+
+# ── Testing ───────────────────────────────────────────────────────
+pytest
+pytest-asyncio
+pytest-cov
+
+# ── Dev tools ─────────────────────────────────────────────────────
+ruff
