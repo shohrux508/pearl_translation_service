@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     PORT: int = 8000
     RUN_TELEGRAM: bool = True
     RUN_API: bool = True
+    ADMIN_IDS: str = "" # Comma-separated list of admin user IDs
+
+    @property
+    def parsed_admin_ids(self) -> list[int]:
+        if not self.ADMIN_IDS:
+            return []
+        return [int(x.strip()) for x in self.ADMIN_IDS.split(",") if x.strip().isdigit()]
 
     # ── Webapp ────────────────────────────────────────────────────────
     RUN_WEBAPP: bool = False
